@@ -19,12 +19,15 @@ import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.Polygon
 import android.graphics.Color
 import org.osmdroid.library.R
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
-const val MIN_LAT = 56.4587
-const val MAX_LAT = 56.4658
-const val MIN_LON = 84.9401
+const val MIN_LAT = 56.4637
+const val MAX_LAT = 56.4733
+const val MIN_LON = 84.9329
 const val MAX_LON = 84.9532
-const val GRID_SIZE = 200
+const val GRID_SIZE = 250
 
 fun geoPointToGridCell(point: GeoPoint): Pair<Int, Int> {
     val latRange = MAX_LAT - MIN_LAT
@@ -45,6 +48,41 @@ fun gridCellToGeoPoint(cell: Pair<Int, Int>): GeoPoint {
 
     return GeoPoint(lat, lon)
 }
+
+fun loadObstaclesFromGeoJson(context: Context): List<List<GeoPoint>> {
+    val obstacles = mutableListOf<List<GeoPoint>>()
+
+    try {
+        val inputStream = context.resources.openRawResource(com.example.myapplication.R.raw.map_data)
+        val jsonString = BufferedReader(InputStreamReader(inputStream)).use { it.readText() }
+
+        val jsonObject = JSONObject(jsonString)
+        val features = jsonObject.getJSONArray("features")
+
+        for (i in 0 until features.length()) {
+            val feature = features.getJSONObject(i)
+            val geometry = feature.getJSONObject("geometry")
+            val type = geometry.getString("type")
+
+            if (type == "Polygon") {
+                val coordinates = geometry.getJSONArray("coordinates").getJSONArray(0)
+                val polygon = mutableListOf<GeoPoint>()
+
+                for (j in 0 until coordinates.length()) {
+                    val point = coordinates.getJSONArray(j)
+                    val lon = point.getDouble(0)
+                    val lat = point.getDouble(1)
+                    polygon.add(GeoPoint(lat, lon))
+                }
+                obstacles.add(polygon)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+
+    return obstacles
+}
 @Composable
 fun MapScreen(context: Context) {
     var startPoint by remember { mutableStateOf<GeoPoint?>(null) }
@@ -53,20 +91,54 @@ fun MapScreen(context: Context) {
     var clusteredPoints by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
     var gridData by remember { mutableStateOf<Array<IntArray>?>(null) }
 
+    var isPathRequested by remember { mutableStateOf(false) }
+    var obstacles by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
+
     LaunchedEffect(Unit) {
-        gridData = generateDummyGrid()
+        obstacles = loadObstaclesFromGeoJson(context)
+        gridData = generateRealGrid(obstacles)
     }
 
-    LaunchedEffect(startPoint, endPoint, gridData) {
-        if (startPoint != null && endPoint != null && gridData != null) {
+    LaunchedEffect(isPathRequested) {
+        if (isPathRequested && startPoint != null && endPoint != null && gridData != null) {
             val startCell = geoPointToGridCell(startPoint!!)
             val endCell = geoPointToGridCell(endPoint!!)
-            val pathCells = runCatching {
-                generateDummyPath(startCell, endCell)
-            }.getOrDefault(emptyList())
-            routeToDraw = pathCells.map { gridCellToGeoPoint(it) }
-        } else {
-            routeToDraw = emptyList()
+
+            val heuristic = { a: Pair<Int, Int>, b: Pair<Int, Int> ->
+                val dx = (a.first - b.first).toDouble()
+                val dy = (a.second - b.second).toDouble()
+                Math.sqrt(dx * dx + dy * dy)
+            }
+
+            val getNeighbors = { cell: Pair<Int, Int> ->
+                val neighbors = mutableListOf<Pair<Int, Int>>()
+                for (dx in -1..1) {
+                    for (dy in -1..1) {
+                        if (dx == 0 && dy == 0) continue
+                        val ni = cell.first + dx
+                        val nj = cell.second + dy
+                        if (ni in 0 until GRID_SIZE && nj in 0 until GRID_SIZE && gridData!![ni][nj] == 1) {
+                            neighbors.add(Pair(ni, nj))
+                        }
+                    }
+                }
+                neighbors
+            }
+
+            val aStar = AStar<Pair<Int, Int>>()
+            val result = aStar.findPath(
+                start = startCell,
+                goal = endCell,
+                getNeighbors = getNeighbors,
+                heuristic = heuristic
+            )
+
+            if (result != null) {
+                routeToDraw = result.path.map { gridCellToGeoPoint(it) }
+            } else {
+                routeToDraw = emptyList()
+            }
+            isPathRequested = false
         }
     }
 
@@ -85,113 +157,40 @@ fun MapScreen(context: Context) {
                 }
             }, update = { mapView ->
                 mapView.overlays.clear()
-                mapView.overlays.clear()
-
                 val eventsReceiver = object : MapEventsReceiver {
                     override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                         p?.let {
-                            if (startPoint == null) {
-                                startPoint = it
-                            } else if (endPoint == null) {
-                                endPoint = it
-                            } else {
-                                startPoint = it
-                                endPoint = null
-                            }
+                            if (startPoint == null) startPoint = it
+                            else if (endPoint == null) endPoint = it
+                            else { startPoint = it; endPoint = null }
                         }
                         return true
                     }
                     override fun longPressHelper(p: GeoPoint?): Boolean = false
                 }
                 mapView.overlays.add(MapEventsOverlay(eventsReceiver))
-
-                val linePaint = Color.LTGRAY
-                val gridStrokeWidth = 1f
-
-                val lonStep = (MAX_LON - MIN_LON) / GRID_SIZE
-                val latStep = (MAX_LAT - MIN_LAT) / GRID_SIZE
-
-                for (i in 0..GRID_SIZE) {
-                    val lat = MIN_LAT + i * latStep
-                    val line = Polyline(mapView)
-                    line.setPoints(listOf(GeoPoint(lat, MIN_LON), GeoPoint(lat, MAX_LON)))
-                    line.color = linePaint
-                    line.width = gridStrokeWidth
-                    mapView.overlays.add(line)
-                }
-
-                for (j in 0..GRID_SIZE) {
-                    val lon = MIN_LON + j * lonStep
-                    val line = Polyline(mapView)
-                    line.setPoints(listOf(GeoPoint(MIN_LAT, lon), GeoPoint(MAX_LAT, lon)))
-                    line.color = linePaint
-                    line.width = gridStrokeWidth
-                    mapView.overlays.add(line)
-                }
-
-                gridData?.let { grid ->
-                    for (i in 0 until GRID_SIZE) {
-                        for (j in 0 until GRID_SIZE) {
-                            val box = Polygon(mapView)
-                            box.points = getGridCellCorners(i, j, latStep, lonStep)
-
-                            if (grid[i][j] == 0) {
-                                box.fillColor = Color.argb(60, 0, 0, 0)
-                            } else {
-                                box.fillColor = Color.TRANSPARENT
-                            }
-
-                            box.strokeColor = Color.BLACK
-                            box.strokeWidth = 0.5f
-
-                            mapView.overlays.add(box)
-                        }
-                    }
-                }
-
                 startPoint?.let {
                     val marker = Marker(mapView)
                     marker.position = it
                     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     marker.title = "Старт"
-                    marker.icon = context.resources.getDrawable(R.drawable.marker_default, null)
                     mapView.overlays.add(marker)
                 }
+
                 endPoint?.let {
                     val marker = Marker(mapView)
                     marker.position = it
                     marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     marker.title = "Финиш"
-                    marker.icon = context.resources.getDrawable(R.drawable.marker_default, null)
                     mapView.overlays.add(marker)
-                }
-
-                if (showClusters && clusteredPoints.isNotEmpty()) {
-                    clusteredPoints.forEachIndexed { clusterIndex, cluster ->
-                        val color = when (clusterIndex % 3) {
-                            0 -> 0xFFFF0000.toInt()
-                            1 -> 0xFF00FF00.toInt()
-                            else -> 0xFFFFFF00.toInt()
-                        }
-                        cluster.forEach { geoPoint ->
-                            val clusterMarker = Marker(mapView)
-                            clusterMarker.position = geoPoint
-                            clusterMarker.icon = context.resources.getDrawable(
-                                R.drawable.marker_default, null
-                            )
-                            clusterMarker.title = "Кластер ${clusterIndex + 1}"
-                            clusterMarker.alpha = 0.7f
-                            mapView.overlays.add(clusterMarker)
-                        }
-                    }
                 }
 
                 if (routeToDraw.isNotEmpty()) {
                     val polyline = Polyline(mapView)
                     polyline.setPoints(routeToDraw)
-                    polyline.setColor(0xFF0000FF.toInt())
-                    polyline.width = 7f
-                    mapView.overlays.add(0, polyline)
+                    polyline.color = android.graphics.Color.BLUE
+                    polyline.width = 10f
+                    mapView.overlays.add(polyline)
                 }
 
                 mapView.invalidate()
@@ -205,12 +204,9 @@ fun MapScreen(context: Context) {
             horizontalArrangement = Arrangement.SpaceAround
         ) {
             Button(
-                onClick = {
-                    showClusters = false
-                    clusteredPoints = emptyList()
-                },
+                onClick = { isPathRequested = true },
                 modifier = Modifier.weight(1f).padding(end = 4.dp),
-                enabled = startPoint != null && endPoint != null
+                enabled = startPoint != null && endPoint != null && !isPathRequested
             ) {
                 Text("Построить маршрут")
             }
@@ -234,6 +230,21 @@ fun MapScreen(context: Context) {
             }
         }
     }
+}
+
+fun isPointInPolygon(point: GeoPoint, polygon: List<GeoPoint>): Boolean {
+    var intersectCount = 0
+    for (j in polygon.indices) {
+        val i = if (j == 0) polygon.size - 1 else j - 1
+        val vi = polygon[i]
+        val vj = polygon[j]
+        if ((vj.latitude > point.latitude) != (vi.latitude > point.latitude) &&
+            (point.longitude < (vi.longitude - vj.longitude) * (point.latitude - vj.latitude) / (vi.latitude - vj.latitude) + vj.longitude)
+        ) {
+            intersectCount++
+        }
+    }
+    return intersectCount % 2 != 0
 }
 
 private fun getGridCellCorners(i: Int, j: Int, latStep: Double, lonStep: Double): List<GeoPoint> {
@@ -271,12 +282,15 @@ private fun generateDummyPath(start: Pair<Int, Int>, end: Pair<Int, Int>): List<
     return path
 }
 
-private fun generateDummyGrid(): Array<IntArray> {
+private fun generateRealGrid(obstaclesList: List<List<GeoPoint>>): Array<IntArray> {
     val grid = Array(GRID_SIZE) { IntArray(GRID_SIZE) { 1 } }
+    for (i in 0 until GRID_SIZE) {
+        for (j in 0 until GRID_SIZE) {
+            val cellPoint = gridCellToGeoPoint(Pair(i, j))
 
-    for (x in 50..70) {
-        for (y in 30..60) {
-            grid[x][y] = 0
+            if (obstaclesList.any { isPointInPolygon(cellPoint, it) }) {
+                grid[i][j] = 0
+            }
         }
     }
     return grid
