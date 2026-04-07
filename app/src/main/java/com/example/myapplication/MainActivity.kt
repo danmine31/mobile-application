@@ -21,41 +21,33 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import androidx.compose.foundation.layout.Arrangement
+import com.example.pathfinding.GeneticScreen
+import com.example.pathfinding.AntScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
-                val context = LocalContext.current
+            var currentScreen by remember { mutableStateOf("pathfinding") }
 
-                var gridMap by remember { mutableStateOf<GridMap?>(null) }
-
-                LaunchedEffect(Unit) {
-                    gridMap = withContext(Dispatchers.Default) {
-                        var loadedGrid = loadGridFromAssets(context)
-
-                        if (loadedGrid == null) {
-                            val generator = MapGridGenerator(context)
-                            loadedGrid = generator.generateFullGrid()
-                            generator.saveGridToJson(loadedGrid, "map_data.json")
-                        }
-
-                        loadedGrid
-                    }
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(onClick = { currentScreen = "pathfinding" }) { Text("Поиск пути") }
+                    Button(onClick = { currentScreen = "clustering" }) { Text("Кластеризация") }
+                    Button(onClick = { currentScreen = "genetic" }) { Text("Генетический") }
+                    Button(onClick = { currentScreen = "ant" }) { Text("Муравьиный") }
                 }
 
-                if (gridMap == null) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                        Text("Генерируем разметку, подождите pls...",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .wrapContentSize(Alignment.Center))
-                    }
-                } else {
-                    MapScreen(gridMap = gridMap!!)
+                when (currentScreen) {
+                    "pathfinding" -> AStarDemo(gridMap)
+                    "clustering" -> ClusteringScreen()
+                    "genetic" -> GeneticScreen()
+                    "ant" -> AntScreen()
                 }
             }
         }
