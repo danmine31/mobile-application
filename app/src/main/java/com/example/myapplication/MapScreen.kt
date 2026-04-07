@@ -17,11 +17,9 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.Polygon
-import android.graphics.Color
-import org.osmdroid.library.R
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlin.math.sqrt
 
 const val MIN_LAT = 56.4637
 const val MAX_LAT = 56.4733
@@ -49,39 +47,41 @@ fun gridCellToGeoPoint(cell: Pair<Int, Int>): GeoPoint {
     return GeoPoint(lat, lon)
 }
 
-fun loadObstaclesFromGeoJson(context: Context): List<List<GeoPoint>> {
-    val obstacles = mutableListOf<List<GeoPoint>>()
-
+fun loadMapData(context: Context): Pair<List<List<GeoPoint>>, List<List<GeoPoint>>> {
+    val polygons = mutableListOf<List<GeoPoint>>()
+    val lines = mutableListOf<List<GeoPoint>>()
     try {
-        val inputStream = context.resources.openRawResource(com.example.myapplication.R.raw.map_data)
+        val inputStream = context.resources.openRawResource(R.raw.map_data)
         val jsonString = BufferedReader(InputStreamReader(inputStream)).use { it.readText() }
-
-        val jsonObject = JSONObject(jsonString)
-        val features = jsonObject.getJSONArray("features")
+        val features = org.json.JSONObject(jsonString).getJSONArray("features")
 
         for (i in 0 until features.length()) {
             val feature = features.getJSONObject(i)
             val geometry = feature.getJSONObject("geometry")
             val type = geometry.getString("type")
+            val props = feature.optJSONObject("properties")
+
+            val isHighway = props?.has("highway") == true
 
             if (type == "Polygon") {
                 val coordinates = geometry.getJSONArray("coordinates").getJSONArray(0)
-                val polygon = mutableListOf<GeoPoint>()
-
-                for (j in 0 until coordinates.length()) {
-                    val point = coordinates.getJSONArray(j)
-                    val lon = point.getDouble(0)
-                    val lat = point.getDouble(1)
-                    polygon.add(GeoPoint(lat, lon))
-                }
-                obstacles.add(polygon)
+                polygons.add(parseGeoJsonCoordinates(coordinates))
+            } else if (type == "LineString" && isHighway) {
+                val coordinates = geometry.getJSONArray("coordinates")
+                lines.add(parseGeoJsonCoordinates(coordinates))
             }
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+    } catch (e: Exception) { e.printStackTrace() }
+    return Pair(polygons, lines)
+}
 
-    return obstacles
+private fun parseGeoJsonCoordinates(array: org.json.JSONArray): List<GeoPoint> {
+    val list = mutableListOf<GeoPoint>()
+    for (i in 0 until array.length()) {
+        val pt = array.getJSONArray(i)
+        list.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
+    }
+    return list
 }
 @Composable
 fun MapScreen(context: Context) {
@@ -92,11 +92,10 @@ fun MapScreen(context: Context) {
     var gridData by remember { mutableStateOf<Array<IntArray>?>(null) }
 
     var isPathRequested by remember { mutableStateOf(false) }
-    var obstacles by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
 
     LaunchedEffect(Unit) {
-        obstacles = loadObstaclesFromGeoJson(context)
-        gridData = generateRealGrid(obstacles)
+        val mapData = loadMapData(context)
+        gridData = generateRealGrid(mapData.first, mapData.second)
     }
 
     LaunchedEffect(isPathRequested) {
@@ -104,39 +103,32 @@ fun MapScreen(context: Context) {
             val startCell = geoPointToGridCell(startPoint!!)
             val endCell = geoPointToGridCell(endPoint!!)
 
-            val heuristic = { a: Pair<Int, Int>, b: Pair<Int, Int> ->
-                val dx = (a.first - b.first).toDouble()
-                val dy = (a.second - b.second).toDouble()
-                Math.sqrt(dx * dx + dy * dy)
-            }
+            val aStar = GridAStar(gridData!!)
 
-            val getNeighbors = { cell: Pair<Int, Int> ->
-                val neighbors = mutableListOf<Pair<Int, Int>>()
-                for (dx in -1..1) {
-                    for (dy in -1..1) {
-                        if (dx == 0 && dy == 0) continue
-                        val ni = cell.first + dx
-                        val nj = cell.second + dy
-                        if (ni in 0 until GRID_SIZE && nj in 0 until GRID_SIZE && gridData!![ni][nj] == 1) {
-                            neighbors.add(Pair(ni, nj))
-                        }
-                    }
-                }
-                neighbors
-            }
-
-            val aStar = AStar<Pair<Int, Int>>()
             val result = aStar.findPath(
                 start = startCell,
                 goal = endCell,
-                getNeighbors = getNeighbors,
-                heuristic = heuristic
+                getNeighbors = { cell ->
+                    val neighbors = mutableListOf<Pair<Int, Int>>()
+                    for (dx in -1..1) {
+                        for (dy in -1..1) {
+                            if (dx == 0 && dy == 0) continue
+                            val ni = cell.first + dx
+                            val nj = cell.second + dy
+                            if (ni in 0 until GRID_SIZE && nj in 0 until GRID_SIZE && gridData!![ni][nj] != 0) {
+                                neighbors.add(Pair(ni, nj))
+                            }
+                        }
+                    }
+                    neighbors
+                },
+                heuristic = { a, b ->
+                    sqrt(Math.pow((a.first - b.first).toDouble(), 2.0) + Math.pow((a.second - b.second).toDouble(), 2.0))
+                }
             )
 
             if (result != null) {
                 routeToDraw = result.path.map { gridCellToGeoPoint(it) }
-            } else {
-                routeToDraw = emptyList()
             }
             isPathRequested = false
         }
@@ -193,6 +185,31 @@ fun MapScreen(context: Context) {
                     mapView.overlays.add(polyline)
                 }
 
+                if (showClusters && clusteredPoints.isNotEmpty()) {
+                    val clusterColors = listOf(
+                        android.graphics.Color.RED,
+                        android.graphics.Color.GREEN,
+                        android.graphics.Color.BLUE,
+                        android.graphics.Color.MAGENTA,
+                        android.graphics.Color.CYAN
+                    )
+
+                    clusteredPoints.forEachIndexed { clusterIdx, pointsInCluster ->
+                        val color = clusterColors[clusterIdx % clusterColors.size]
+
+                        pointsInCluster.forEach { point ->
+                            val circle = Polygon(mapView).apply {
+                                points = Polygon.pointsAsCircle(point, 15.0)
+                                fillPaint.color = color
+                                fillPaint.alpha = 150
+                                outlinePaint.color = color
+                                outlinePaint.strokeWidth = 2f
+                                title = "Заведение (Кластер ${clusterIdx + 1})"
+                            }
+                            mapView.overlays.add(circle)
+                        }
+                    }
+                }
                 mapView.invalidate()
             }
         )
@@ -213,20 +230,22 @@ fun MapScreen(context: Context) {
 
             Button(
                 onClick = {
-                    if (gridData != null) {
-                        val foodLocations = generateDummyFoodLocations(gridData!!)
-                        val clusters = runCatching {
-                            generateDummyClusters(foodLocations, numClusters = 3)
-                        }.getOrDefault(emptyList())
+                    val foodLocations = realFoodLocations
+                    val pointsForAlgo = foodLocations.map { Point(it.longitude, it.latitude) }
 
-                        clusteredPoints = clusters
-                        showClusters = true
-                        routeToDraw = emptyList()
+                    val k = 3
+                    val result = kMeans(pointsForAlgo, k)
+
+                    val clusters = List(k) { mutableListOf<GeoPoint>() }
+                    result.labels.forEachIndexed { index, labelIdx ->
+                        clusters[labelIdx].add(foodLocations[index])
                     }
-                },
-                modifier = Modifier.weight(1f).padding(start = 4.dp)
+
+                    clusteredPoints = clusters
+                    showClusters = true
+                }
             ) {
-                Text("Кластеризация")
+                Text("Зоны еды")
             }
         }
     }
@@ -247,70 +266,33 @@ fun isPointInPolygon(point: GeoPoint, polygon: List<GeoPoint>): Boolean {
     return intersectCount % 2 != 0
 }
 
-private fun getGridCellCorners(i: Int, j: Int, latStep: Double, lonStep: Double): List<GeoPoint> {
-    val northWestLat = MIN_LAT + i * latStep
-    val northWestLon = MIN_LON + j * lonStep
+private fun generateRealGrid(polygons: List<List<GeoPoint>>, lines: List<List<GeoPoint>>): Array<IntArray> {
+    val grid = Array(GRID_SIZE) { IntArray(GRID_SIZE) { 5 } }
 
-    val southWestLat = MIN_LAT + (i + 1) * latStep
-    val southWestLon = MIN_LON + j * lonStep
-
-    val southEastLat = MIN_LAT + (i + 1) * latStep
-    val southEastLon = MIN_LON + (j + 1) * lonStep
-
-    val northEastLat = MIN_LAT + i * latStep
-    val northEastLon = MIN_LON + (j + 1) * lonStep
-
-    return listOf(
-        GeoPoint(northWestLat, northWestLon),
-        GeoPoint(southWestLat, southWestLon),
-        GeoPoint(southEastLat, southEastLon),
-        GeoPoint(northEastLat, northEastLon),
-        GeoPoint(northWestLat, northWestLon)
-    )
-}
-private fun generateDummyPath(start: Pair<Int, Int>, end: Pair<Int, Int>): List<Pair<Int, Int>> {
-    val path = mutableListOf<Pair<Int, Int>>()
-    var current = start
-    path.add(current)
-    while (current != end) {
-        val nextI = if (current.first < end.first) current.first + 1 else if (current.first > end.first) current.first - 1 else current.first
-        val nextJ = if (current.second < end.second) current.second + 1 else if (current.second > end.second) current.second - 1 else current.second
-        current = Pair(nextI, nextJ)
-        path.add(current)
-        if (path.size > GRID_SIZE * GRID_SIZE) break
-    }
-    return path
-}
-
-private fun generateRealGrid(obstaclesList: List<List<GeoPoint>>): Array<IntArray> {
-    val grid = Array(GRID_SIZE) { IntArray(GRID_SIZE) { 1 } }
     for (i in 0 until GRID_SIZE) {
         for (j in 0 until GRID_SIZE) {
             val cellPoint = gridCellToGeoPoint(Pair(i, j))
-
-            if (obstaclesList.any { isPointInPolygon(cellPoint, it) }) {
+            if (polygons.any { isPointInPolygon(cellPoint, it) }) {
                 grid[i][j] = 0
             }
+        }
+    }
+
+    for (line in lines) {
+        for (point in line) {
+            val cell = geoPointToGridCell(point)
+            grid[cell.first][cell.second] = 1
         }
     }
     return grid
 }
 
-
-private fun generateDummyFoodLocations(grid: Array<IntArray>): List<GeoPoint> {
-    val locations = mutableListOf<GeoPoint>()
-    for (i in 0 until 10) {
-        val latOffset = (0..100).random() / 10000.0
-        val lonOffset = (0..100).random() / 10000.0
-        locations.add(GeoPoint(MIN_LAT + latOffset, MIN_LON + lonOffset))
-    }
-    return locations
-}
-
-private fun generateDummyClusters(foodLocations: List<GeoPoint>, numClusters: Int): List<List<GeoPoint>> {
-    val clusters = List(numClusters) { mutableListOf<GeoPoint>() }
-    foodLocations.forEachIndexed { index, geoPoint ->
-        clusters[index % numClusters].add(geoPoint)
-    }
-    return clusters
-}
+val realFoodLocations = listOf(
+    GeoPoint(56.469340, 84.946744),
+    GeoPoint(56.469604, 84.946239),
+    GeoPoint(56.469124, 84.951161),
+    GeoPoint(56.472440, 84.948511),
+    GeoPoint(56.471410, 84.941150),
+    GeoPoint(56.467154, 84.940174),
+    GeoPoint(56.472607, 84.950853)
+)
