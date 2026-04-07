@@ -1,4 +1,4 @@
-package com.example.pathfinding.data
+package com.example.myapplication.data
 
 class GridMap(
     val width: Int,

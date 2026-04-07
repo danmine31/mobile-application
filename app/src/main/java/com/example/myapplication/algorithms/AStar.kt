@@ -1,4 +1,4 @@
-package com.example.pathfinding.algorithms
+package com.example.myapplication.algorithms
 
 import java.util.PriorityQueue
 

@@ -6,7 +6,7 @@ object AppConstants {
     const val MIN_LON = 84.93393
     const val MAX_LON = 84.95891
 
-    const val CELL_SIZE_METERS = 4.0
+    const val CELL_SIZE_METERS = 3.0
 
     const val METERS_PER_LAT_DEGREE = 111132.0
     const val METERS_PER_LON_DEGREE = 61500.0
