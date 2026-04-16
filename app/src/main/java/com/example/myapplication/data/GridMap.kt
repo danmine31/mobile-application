@@ -41,12 +41,10 @@ class GridMap(
     }
 
     fun heuristic(a: GridNode, b: GridNode): Double {
-        return Math.sqrt(Math.pow((a.x-b.x).toDouble(), 2.0) + Math.pow((a.y-b.y).toDouble(), 2.0))
+        return Math.sqrt(Math.pow((a.x-b.x).toDouble(), 2.0)+Math.pow((a.y-b.y).toDouble(), 2.0))
     }
 
     fun costBetween(a: GridNode, b: GridNode): Double {
         return if (a.x != b.x && a.y != b.y) 1.41421356 else 1.0
     }
-
-    fun costBetween(a: GridNode, b: GridNode): Double = 1.0
 }
