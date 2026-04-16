@@ -24,6 +24,7 @@ class AStar<T> {
         goal: T,
         getNeighbors: (T) -> List<T>,
         heuristic: (T, T) -> Double,
+        costBetween: (T, T) -> Double = { _, _ -> 1.0 },
         collectSteps: Boolean = false
     ): AStarResult<T>? {
         val steps = if (collectSteps) mutableListOf<Step<T>>() else null
@@ -89,8 +90,6 @@ class AStar<T> {
 
         return null
     }
-
-    protected open fun costBetween(a: T, b: T): Double = 1.0
 
     private fun reconstructPath(cameFrom: Map<T, T>, current: T): List<T> {
         val path = mutableListOf(current)
