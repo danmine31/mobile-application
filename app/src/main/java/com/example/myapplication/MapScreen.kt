@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.content.Context
+import android.graphics.Color as AndroidColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.*
@@ -12,11 +13,11 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.Polygon
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.math.sqrt
@@ -84,14 +85,13 @@ private fun parseGeoJsonCoordinates(array: org.json.JSONArray): List<GeoPoint> {
     return list
 }
 @Composable
-fun MapScreen(context: Context) {
+fun MapScreen(context: Context, onNavigateToRating: (GeoPoint) -> Unit) {
     var startPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var endPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var routeToDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
-    var clusteredPoints by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
     var gridData by remember { mutableStateOf<Array<IntArray>?>(null) }
-
     var isPathRequested by remember { mutableStateOf(false) }
+    var isRatingMode by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val mapData = loadMapData(context)
@@ -134,7 +134,6 @@ fun MapScreen(context: Context) {
         }
     }
 
-    var showClusters by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         AndroidView(
@@ -143,71 +142,65 @@ fun MapScreen(context: Context) {
                 MapView(currentContext).apply {
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
-
                     controller.setZoom(17.0)
                     controller.setCenter(GeoPoint(56.4635, 84.9480))
                 }
-            }, update = { mapView ->
+            },
+            update = { mapView ->
                 mapView.overlays.clear()
-                val eventsReceiver = object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                        p?.let {
-                            if (startPoint == null) startPoint = it
-                            else if (endPoint == null) endPoint = it
-                            else { startPoint = it; endPoint = null }
-                        }
-                        return true
-                    }
-                    override fun longPressHelper(p: GeoPoint?): Boolean = false
-                }
-                mapView.overlays.add(MapEventsOverlay(eventsReceiver))
-                startPoint?.let {
-                    val marker = Marker(mapView)
-                    marker.position = it
-                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    marker.title = "Старт"
-                    mapView.overlays.add(marker)
-                }
 
-                endPoint?.let {
-                    val marker = Marker(mapView)
-                    marker.position = it
-                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    marker.title = "Финиш"
-                    mapView.overlays.add(marker)
-                }
-
-                if (routeToDraw.isNotEmpty()) {
-                    val polyline = Polyline(mapView)
-                    polyline.setPoints(routeToDraw)
-                    polyline.color = android.graphics.Color.BLUE
-                    polyline.width = 10f
-                    mapView.overlays.add(polyline)
-                }
-
-                if (showClusters && clusteredPoints.isNotEmpty()) {
-                    val clusterColors = listOf(
-                        android.graphics.Color.RED,
-                        android.graphics.Color.GREEN,
-                        android.graphics.Color.BLUE,
-                        android.graphics.Color.MAGENTA,
-                        android.graphics.Color.CYAN
-                    )
-
-                    clusteredPoints.forEachIndexed { clusterIdx, pointsInCluster ->
-                        val color = clusterColors[clusterIdx % clusterColors.size]
-
-                        pointsInCluster.forEach { point ->
-                            val circle = Polygon(mapView).apply {
-                                points = Polygon.pointsAsCircle(point, 15.0)
-                                fillPaint.color = color
-                                fillPaint.alpha = 150
-                                outlinePaint.color = color
-                                outlinePaint.strokeWidth = 2f
-                                title = "Заведение (Кластер ${clusterIdx + 1})"
+                realFoodLocations.forEachIndexed { index, foodLocation ->
+                    val foodMarker = Marker(mapView).apply {
+                        position = foodLocation
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        title = "Заведение ${index + 1}"
+                        if (isRatingMode) {
+                            icon = mapView.context.getDrawable(org.osmdroid.library.R.drawable.person)
+                            setOnMarkerClickListener { marker, _ ->
+                                onNavigateToRating(marker.position)
+                                true
                             }
-                            mapView.overlays.add(circle)
                         }
+                    }
+                    mapView.overlays.add(foodMarker)
+                }
+
+                if (!isRatingMode) {
+                    val eventsReceiver = object : MapEventsReceiver {
+                        override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                            p?.let {
+                                if (startPoint == null) startPoint = it
+                                else if (endPoint == null) endPoint = it
+                                else { startPoint = it; endPoint = null }
+                            }
+                            return true
+                        }
+                        override fun longPressHelper(p: GeoPoint?): Boolean = false
+                    }
+                    mapView.overlays.add(MapEventsOverlay(eventsReceiver))
+
+                    startPoint?.let {
+                        val marker = Marker(mapView)
+                        marker.position = it
+                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        marker.title = "Старт"
+                        mapView.overlays.add(marker)
+                    }
+
+                    endPoint?.let {
+                        val marker = Marker(mapView)
+                        marker.position = it
+                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        marker.title = "Финиш"
+                        mapView.overlays.add(marker)
+                    }
+
+                    if (routeToDraw.isNotEmpty()) {
+                        val polyline = Polyline(mapView)
+                        polyline.setPoints(routeToDraw)
+                        polyline.color = AndroidColor.BLUE
+                        polyline.width = 10f
+                        mapView.overlays.add(polyline)
                     }
                 }
                 mapView.invalidate()
@@ -215,37 +208,22 @@ fun MapScreen(context: Context) {
         )
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceAround
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Button(
                 onClick = { isPathRequested = true },
-                modifier = Modifier.weight(1f).padding(end = 4.dp),
-                enabled = startPoint != null && endPoint != null && !isPathRequested
+                enabled = startPoint != null && endPoint != null && !isPathRequested && !isRatingMode,
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
             ) {
                 Text("Построить маршрут")
             }
-
             Button(
-                onClick = {
-                    val foodLocations = realFoodLocations
-                    val pointsForAlgo = foodLocations.map { Point(it.longitude, it.latitude) }
-
-                    val k = 3
-                    val result = kMeans(pointsForAlgo, k)
-
-                    val clusters = List(k) { mutableListOf<GeoPoint>() }
-                    result.labels.forEachIndexed { index, labelIdx ->
-                        clusters[labelIdx].add(foodLocations[index])
-                    }
-
-                    clusteredPoints = clusters
-                    showClusters = true
-                }
+                onClick = { isRatingMode = !isRatingMode },
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
             ) {
-                Text("Зоны еды")
+                Text(if (isRatingMode) "Отмена" else "Поставить оценку")
             }
         }
     }
