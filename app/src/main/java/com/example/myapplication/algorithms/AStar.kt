@@ -2,92 +2,50 @@ package com.example.myapplication.algorithms
 
 import java.util.PriorityQueue
 
-data class AStarResult<T>(
-    val path: List<T>,
-    val cost: Double,
-    val steps: List<AStar.Step<T>>? = null
-)
-
 class AStar<T> {
 
-    data class Step<T>(
-        val current: T?,
-        val openSet: Set<T>,
-        val closedSet: Set<T>,
-        val cameFrom: Map<T, T>,
-        val gScore: Map<T, Double>,
-        val fScore: Map<T, Double>
-    )
+    data class Step<T>(val current: T, val openSet: Set<T>, val closedSet: Set<T>)
+    data class Result<T>(val path: List<T>, val steps: List<Step<T>>? = null)
 
-    fun findPath(
+    suspend fun findPath(
         start: T,
         goal: T,
         getNeighbors: (T) -> List<T>,
         heuristic: (T, T) -> Double,
-        costBetween: (T, T) -> Double = { _, _ -> 1.0 },
-        collectSteps: Boolean = false
-    ): AStarResult<T>? {
-        val steps = if (collectSteps) mutableListOf<Step<T>>() else null
-
-        val openSet = PriorityQueue<Pair<T, Double>>(compareBy { it.second })
-        val openMap = mutableMapOf<T, Double>()
+        costBetween: (T, T) -> Double,
+        onStep: (suspend (Step<T>) -> Unit)? = null
+    ): Result<T>? {
+        val openSet = mutableSetOf(start)
         val closedSet = mutableSetOf<T>()
-
-        val gScore = mutableMapOf<T, Double>().withDefault { Double.POSITIVE_INFINITY }
-        val fScore = mutableMapOf<T, Double>().withDefault { Double.POSITIVE_INFINITY }
         val cameFrom = mutableMapOf<T, T>()
-
-        gScore[start] = 0.0
-        val startF = heuristic(start, goal)
-        fScore[start] = startF
-        openSet.add(start to startF)
-        openMap[start] = startF
+        val gScore = mutableMapOf(start to 0.0)
+        val fScore = mutableMapOf(start to heuristic(start, goal))
 
         while (openSet.isNotEmpty()) {
-            val (current, _) = openSet.poll()
-            openMap.remove(current)
+            val current = openSet.minByOrNull { fScore[it] ?: Double.MAX_VALUE } ?: break
 
-            if (collectSteps) {
-                steps?.add(
-                    Step(
-                        current = current,
-                        openSet = openMap.keys.toSet(),
-                        closedSet = closedSet.toSet(),
-                        cameFrom = cameFrom.toMap(),
-                        gScore = gScore.toMap(),
-                        fScore = fScore.toMap()
-                    )
-                )
-            }
+            onStep?.invoke(Step(current, openSet.toSet(), closedSet.toSet()))
 
             if (current == goal) {
-                val path = reconstructPath(cameFrom, current)
-                val totalCost = gScore[current] ?: 0.0
-                return AStarResult(path, totalCost, steps)
+                return Result(reconstructPath(cameFrom, current))
             }
 
+            openSet.remove(current)
             closedSet.add(current)
 
             for (neighbor in getNeighbors(current)) {
                 if (neighbor in closedSet) continue
 
-                val stepCost = costBetween(current, neighbor)
-                val tentativeG = (gScore[current] ?: Double.POSITIVE_INFINITY) + stepCost
+                val tentativeGScore = (gScore[current] ?: Double.MAX_VALUE) + costBetween(current, neighbor)
 
-                if (tentativeG < (gScore[neighbor] ?: Double.POSITIVE_INFINITY)) {
+                if (tentativeGScore < (gScore[neighbor] ?: Double.MAX_VALUE)) {
                     cameFrom[neighbor] = current
-                    gScore[neighbor] = tentativeG
-                    val neighborF = tentativeG + heuristic(neighbor, goal)
-                    fScore[neighbor] = neighborF
-
-                    if (neighbor !in openMap) {
-                        openSet.add(neighbor to neighborF)
-                        openMap[neighbor] = neighborF
-                    }
+                    gScore[neighbor] = tentativeGScore
+                    fScore[neighbor] = tentativeGScore + heuristic(neighbor, goal)
+                    openSet.add(neighbor)
                 }
             }
         }
-
         return null
     }
 

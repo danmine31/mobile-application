@@ -15,6 +15,7 @@ class MapGridGenerator(private val context: Context) {
         val nodes = mutableMapOf<Long, TempPoint>()
         val obstacles = mutableListOf<List<TempPoint>>()
         val walkableSurfaces = mutableListOf<List<TempPoint>>()
+        val parsedFoodPoints = mutableListOf<FoodPoint>()
 
 
         val inputStream = context.assets.open(Config.OSM_FILE_NAME)
@@ -25,6 +26,10 @@ class MapGridGenerator(private val context: Context) {
         var currentWayNodes = mutableListOf<Long>()
         var isObstacle = false
         var isWalkableSurface = false
+        var currentAmenity = ""
+        var currentName = ""
+        var currentNodeLat = 0.0
+        var currentNodeLon = 0.0
 
         while (eventType != XmlPullParser.END_DOCUMENT) {
             when (eventType) {
@@ -32,14 +37,19 @@ class MapGridGenerator(private val context: Context) {
                     when (parser.name) {
                         "node" -> {
                             val id = parser.getAttributeValue(null, "id").toLong()
-                            val lat = parser.getAttributeValue(null, "lat").toDouble()
-                            val lon = parser.getAttributeValue(null, "lon").toDouble()
-                            nodes[id] = TempPoint(lat, lon)
+                            currentNodeLat = parser.getAttributeValue(null, "lat").toDouble()
+                            currentNodeLon = parser.getAttributeValue(null, "lon").toDouble()
+                            nodes[id] = TempPoint(currentNodeLat, currentNodeLon)
+
+                            currentAmenity = ""
+                            currentName = ""
                         }
                         "way" -> {
                             currentWayNodes.clear()
                             isObstacle = false
                             isWalkableSurface = false
+                            currentAmenity = ""
+                            currentName = ""
                         }
                         "nd" -> {
                             val ref = parser.getAttributeValue(null, "ref").toLong()
@@ -64,17 +74,52 @@ class MapGridGenerator(private val context: Context) {
                             if (k == "building" || k == "barrier" || v == "water" || (k == "natural" && v == "water") || k == "amenity" && v == "parking") {
                                 isObstacle = true
                             }
+
+                            if (k == "amenity") {
+                                if (v == "cafe" || v == "restaurant" || v == "fast_food" || 
+                                    v == "food_court" || v == "pub" || v == "bar" || v == "canteen") {
+                                    currentAmenity = v
+                                }
+                            }
+                            if (k == "shop") {
+                                if (v == "supermarket" || v == "convenience") {
+                                    currentAmenity = v
+                                }
+                            }
+                            if (k == "name") {
+                                currentName = v
+                            }
                         }
                     }
                 }
                 XmlPullParser.END_TAG -> {
-                    if (parser.name == "way") {
+                    if (parser.name == "node") {
+                        if (currentAmenity.isNotEmpty()) {
+                            parsedFoodPoints.add(FoodPoint(
+                                name = if (currentName.isNotEmpty()) currentName else "Заведение",
+                                lat = currentNodeLat,
+                                lon = currentNodeLon,
+                                type = currentAmenity
+                            ))
+                        }
+                    } else if (parser.name == "way") {
                         val pts = currentWayNodes.mapNotNull { nodes[it] }
                         if (pts.isNotEmpty()) {
                             if (isObstacle) {
                                 obstacles.add(pts)
                             } else if (isWalkableSurface) {
                                 walkableSurfaces.add(pts)
+                            }
+
+                            if (currentAmenity.isNotEmpty()) {
+                                val avgLat = pts.map { it.lat }.average()
+                                val avgLon = pts.map { it.lon }.average()
+                                parsedFoodPoints.add(FoodPoint(
+                                    name = if (currentName.isNotEmpty()) currentName else "Заведение",
+                                    lat = avgLat,
+                                    lon = avgLon,
+                                    type = currentAmenity
+                                ))
                             }
                         }
                     }
@@ -144,7 +189,7 @@ class MapGridGenerator(private val context: Context) {
             }
         }
 
-        return GridMap(gridWidth, gridHeight, walkable)
+        return GridMap(gridWidth, gridHeight, walkable, parsedFoodPoints)
     }
 
     private fun isNearLine(line: List<TempPoint>, lat: Double, lon: Double): Boolean {
@@ -203,6 +248,17 @@ class MapGridGenerator(private val context: Context) {
                 }
             }
             json.put("data_string", sb.toString())
+
+            val foodArray = org.json.JSONArray()
+            for (fp in gridMap.foodPoints) {
+                val fJson = JSONObject()
+                fJson.put("name", fp.name)
+                fJson.put("lat", fp.lat)
+                fJson.put("lon", fp.lon)
+                fJson.put("type", fp.type)
+                foodArray.put(fJson)
+            }
+            json.put("food_points", foodArray)
 
             val file = File(context.filesDir, fileName)
             file.writeText(json.toString())

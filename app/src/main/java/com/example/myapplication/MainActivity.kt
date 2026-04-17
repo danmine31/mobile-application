@@ -53,12 +53,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
 
                     val loaded = withContext(Dispatchers.Default) {
-                        var g = loadGridFromFile(context, "map_data.json")
+                        var g = loadGridFromFile(context, "map_data_v2.json")
                         if (g == null) g = loadGridFromAssets(context)
                         if (g == null) {
                             val generator = MapGridGenerator(context)
                             g = generator.generateFullGrid()
-                            generator.saveGridToJson(g, "map_data.json")
+                            generator.saveGridToJson(g, "map_data_v2.json")
                         }
                         g
                     }
@@ -180,5 +180,19 @@ private fun parseGridJson(jsonString: String): GridMap {
         }
     }
     
-    return GridMap(w, h, walkable)
+    val foodPoints = mutableListOf<com.example.myapplication.data.FoodPoint>()
+    if (json.has("food_points")) {
+        val foodArray = json.getJSONArray("food_points")
+        for (i in 0 until foodArray.length()) {
+            val f = foodArray.getJSONObject(i)
+            foodPoints.add(com.example.myapplication.data.FoodPoint(
+                name = f.getString("name"),
+                lat = f.getDouble("lat"),
+                lon = f.getDouble("lon"),
+                type = f.getString("type")
+            ))
+        }
+    }
+    
+    return GridMap(w, h, walkable, foodPoints)
 }
