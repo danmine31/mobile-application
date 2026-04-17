@@ -57,6 +57,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import kotlinx.coroutines.delay
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 fun smoothPath(path: List<GridNode>, gridMap: GridMap): List<GridNode> {
     if (path.size <= 2) return path
@@ -163,6 +165,8 @@ fun MapScreen(gridMap: GridMap) {
     var endPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var routeToDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
 
+    var aStarTargetMode by remember { mutableStateOf<AStarTarget>(AStarTarget.START) }
+
     var currentSection by remember { mutableStateOf(AppSection.NAVIGATION) }
 
     var isGridEnabled by remember { mutableStateOf(false) }
@@ -180,6 +184,8 @@ fun MapScreen(gridMap: GridMap) {
     val aStar = remember { AStar<GridNode>() }
 
     val gridOverlay = remember(gridMap) { GridOverlay(gridMap) }
+    
+    var myLocationOverlay by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
     
     var kClusters by remember { mutableStateOf(3) }
     var clusterMarkers by remember { mutableStateOf<List<Marker>>(emptyList()) }
@@ -354,6 +360,11 @@ fun MapScreen(gridMap: GridMap) {
                     val centerLon = (AppConstants.MAX_LON + AppConstants.MIN_LON) / 2
                     controller.setCenter(GeoPoint(centerLat, centerLon))
                     controller.setZoom(AppConstants.DEFAULT_ZOOM)
+
+                    val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(context), this)
+                    locationOverlay.enableMyLocation()
+                    locationOverlay.enableFollowLocation()
+                    myLocationOverlay = locationOverlay
                 }
             }, update = { mapView ->
 
@@ -374,6 +385,12 @@ fun MapScreen(gridMap: GridMap) {
                 rotationOverlay.isEnabled = !isDrawingMode
                 mapView.overlays.add(rotationOverlay)
                 mapView.overlays.add(gridOverlay)
+                
+                myLocationOverlay?.let {
+                    if (!mapView.overlays.contains(it)) {
+                        mapView.overlays.add(it)
+                    }
+                }
 
 
                 val drawingOverlay = object : Overlay() {
@@ -420,7 +437,7 @@ fun MapScreen(gridMap: GridMap) {
                     startPoint?.let {
                         val marker = Marker(mapView)
                         marker.position = it
-                        marker.icon = createBlueDotIcon(context, AppConstants.MARKER_SIZE_PX)
+                        marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, true)
                         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         marker.title = "Старт"
                         marker.infoWindow = null
@@ -430,8 +447,8 @@ fun MapScreen(gridMap: GridMap) {
                     endPoint?.let {
                         val marker = Marker(mapView)
                         marker.position = it
-                        marker.icon = createBlueDotIcon(context, AppConstants.MARKER_SIZE_PX)
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, false)
+                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         marker.title = "Финиш"
                         marker.infoWindow = null
                         mapView.overlays.add(marker)
@@ -452,14 +469,13 @@ fun MapScreen(gridMap: GridMap) {
                         p?.let { gp ->
                             if (currentSection == AppSection.NAVIGATION) {
                                 if (!isDrawingMode) {
-
-                                    if (startPoint == null) {
+                                    if (aStarTargetMode == AStarTarget.START) {
                                         startPoint = gp
-                                    } else if (endPoint == null) {
-                                        endPoint = gp
                                     } else {
-                                        startPoint = gp
-                                        endPoint = null
+                                        endPoint = gp
+                                    }
+
+                                    if (startPoint != null && endPoint != null) {
                                         routeToDraw = emptyList()
                                     }
                                 }
@@ -561,6 +577,26 @@ fun MapScreen(gridMap: GridMap) {
                     Text("Анимация поиска", style = MaterialTheme.typography.bodySmall)
                 }
             }
+
+            IconButton(
+                onClick = {
+                    myLocationOverlay?.let { overlay ->
+                        val myLocation = overlay.myLocation
+                        if (myLocation != null) {
+                        } else {
+                            Toast.makeText(context, "Определяем местоположение...", Toast.LENGTH_SHORT).show()
+                        }
+                        overlay.enableFollowLocation()
+                    }
+                },
+                modifier = Modifier.size(40.dp).padding(4.dp)
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = "My Location",
+                    tint = TSU_LightBlue
+                )
+            }
         }
 
         if (currentSection == AppSection.NAVIGATION) {
@@ -618,6 +654,39 @@ fun MapScreen(gridMap: GridMap) {
                                 style = MaterialTheme.typography.labelLarge,
                                 color = if (isDrawingMode) ComposeColor.White else ComposeColor.Gray
                             )
+                        }
+                    }
+
+                    if (!isDrawingMode) {
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Surface(
+                            color = ComposeColor.LightGray.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(40.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilterChip(
+                                    selected = aStarTargetMode == AStarTarget.START,
+                                    onClick = { aStarTargetMode = AStarTarget.START },
+                                    label = { Text("Старт") },
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ComposeColor.Green.copy(alpha = 0.2f),
+                                        selectedLabelColor = ComposeColor.Black
+                                    )
+                                )
+                                FilterChip(
+                                    selected = aStarTargetMode == AStarTarget.END,
+                                    onClick = { aStarTargetMode = AStarTarget.END },
+                                    label = { Text("Финиш") },
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ComposeColor.Red.copy(alpha = 0.2f),
+                                        selectedLabelColor = ComposeColor.Black
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -759,15 +828,26 @@ enum class AppSection(val title: String) {
 
 enum class ObstacleMode { NONE, LINE, CIRCLE }
 
-fun createBlueDotIcon(context: Context, sizePx: Int): Drawable {
+enum class AStarTarget { START, END }
+
+fun createAStarIcon(context: Context, sizePx: Int, isStart: Boolean): Drawable {
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint().apply {
-        color = TSU_LIGHT_BLUE
+        color = if (isStart) android.graphics.Color.GREEN else android.graphics.Color.RED
         style = Paint.Style.FILL
         isAntiAlias = true
     }
-    canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f, paint)
+
+    canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 2f, paint)
+
+    paint.apply {
+        color = android.graphics.Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 1f, paint)
+    
     return BitmapDrawable(context.resources, bitmap)
 }
 
