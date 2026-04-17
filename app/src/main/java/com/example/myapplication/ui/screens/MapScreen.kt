@@ -163,6 +163,8 @@ fun MapScreen(gridMap: GridMap) {
     var endPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var routeToDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
 
+    var aStarTargetMode by remember { mutableStateOf<AStarTarget>(AStarTarget.START) }
+
     var currentSection by remember { mutableStateOf(AppSection.NAVIGATION) }
 
     var isGridEnabled by remember { mutableStateOf(false) }
