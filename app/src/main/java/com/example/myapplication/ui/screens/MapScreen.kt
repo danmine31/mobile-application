@@ -42,6 +42,7 @@ import com.example.myapplication.algorithms.Point as AlgoPoint
 import com.example.myapplication.data.AppConstants
 import com.example.myapplication.data.GridMap
 import com.example.myapplication.data.GridNode
+import com.example.myapplication.data.FoodPoint
 import com.example.myapplication.ui.theme.TSU_LIGHT_BLUE
 import com.example.myapplication.ui.theme.TSU_LightBlue
 import com.example.myapplication.ui.theme.TSU_DarkBlue
@@ -59,7 +60,7 @@ import android.graphics.drawable.BitmapDrawable
 import kotlinx.coroutines.delay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-
+import com.example.myapplication.RatingScreen
 fun smoothPath(path: List<GridNode>, gridMap: GridMap): List<GridNode> {
     if (path.size <= 2) return path
     val smoothed = mutableListOf<GridNode>()
@@ -68,7 +69,6 @@ fun smoothPath(path: List<GridNode>, gridMap: GridMap): List<GridNode> {
     var currentIdx = 0
     while (currentIdx < path.size - 1) {
         var furthestVisible = currentIdx + 1
-
         for (checkIdx in (currentIdx + 2) until path.size) {
             if (hasLineOfSight(path[currentIdx], path[checkIdx], gridMap)) {
                 furthestVisible = checkIdx
@@ -110,23 +110,16 @@ fun hasLineOfSight(start: GridNode, end: GridNode, gridMap: GridMap): Boolean {
 fun geoPointToGridCell(point: GeoPoint, gridWidth: Int, gridHeight: Int): GridNode {
     val latRange = AppConstants.MAX_LAT - AppConstants.MIN_LAT
     val lonRange = AppConstants.MAX_LON - AppConstants.MIN_LON
-
     val y = ((point.latitude - AppConstants.MIN_LAT) / latRange * gridHeight).toInt()
     val x = ((point.longitude - AppConstants.MIN_LON) / lonRange * gridWidth).toInt()
-
-    return GridNode(
-        x.coerceIn(0, gridWidth - 1),
-        y.coerceIn(0, gridHeight - 1)
-    )
+    return GridNode(x.coerceIn(0, gridWidth - 1), y.coerceIn(0, gridHeight - 1))
 }
 
 fun gridCellToGeoPoint(node: GridNode, width: Int, height: Int): GeoPoint {
     val latRange = AppConstants.MAX_LAT - AppConstants.MIN_LAT
     val lonRange = AppConstants.MAX_LON - AppConstants.MIN_LON
-
     val lat = AppConstants.MIN_LAT + ((node.y.toDouble() + 0.5) / height) * latRange
     val lon = AppConstants.MIN_LON + ((node.x.toDouble() + 0.5) / width) * lonRange
-
     return GeoPoint(lat, lon)
 }
 
@@ -158,39 +151,33 @@ fun getNodesOnLine(start: GridNode, end: GridNode): List<GridNode> {
 
 @Composable
 fun MapScreen(gridMap: GridMap) {
-
     val context = LocalContext.current
 
     var startPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var endPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var routeToDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
-
     var aStarTargetMode by remember { mutableStateOf<AStarTarget>(AStarTarget.START) }
-
     var currentSection by remember { mutableStateOf(AppSection.NAVIGATION) }
+    var selectedEstablishmentForRating by remember { mutableStateOf<FoodPoint?>(null) }
 
     var isGridEnabled by remember { mutableStateOf(false) }
     var showOnlyWalkable by remember { mutableStateOf(true) }
-
     var isDrawingMode by remember { mutableStateOf(false) }
     var firstLinePoint by remember { mutableStateOf<GridNode?>(null) }
     var isAnimatingAStar by remember { mutableStateOf(false) }
     var animationSpeed by remember { mutableStateOf(50f) }
     var shouldAnimateAStar by remember { mutableStateOf(true) }
     var currentAStarStep by remember { mutableStateOf<AStar.Step<GridNode>?>(null) }
-
     var lastAddedNode by remember { mutableStateOf<GridNode?>(null) }
 
     val aStar = remember { AStar<GridNode>() }
-
     val gridOverlay = remember(gridMap) { GridOverlay(gridMap) }
-    
     var myLocationOverlay by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
-    
+
     var kClusters by remember { mutableStateOf(3) }
     var clusterMarkers by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var selectedMetric by remember { mutableStateOf(DistanceMetric.EUCLIDEAN) }
-    
+
     var isCalculating by remember { mutableStateOf(false) }
     var clusteringJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -204,14 +191,13 @@ fun MapScreen(gridMap: GridMap) {
         ComposeColor(0xFFFFD54F), ComposeColor(0xFFBA68C8), ComposeColor(0xFF4DB6AC),
         ComposeColor(0xFFFF8A65), ComposeColor(0xFFA1887F), ComposeColor(0xFF90A4AE)
     )
-    
 
     LaunchedEffect(gridMap) {
         foodPoints = gridMap.foodPoints.map { GeoPoint(it.lat, it.lon) }
     }
 
     var clusterCentroidsForOverlay by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
-    val clusterColorsInt = remember { clusterColors.map { 
+    val clusterColorsInt = remember { clusterColors.map {
         android.graphics.Color.argb(
             (it.alpha * 255).toInt(),
             (it.red * 255).toInt(),
@@ -223,60 +209,52 @@ fun MapScreen(gridMap: GridMap) {
     fun calculateClusters() {
         val activePointsCopy = if (useUserPoints) userPoints.toList() else foodPoints.toList()
         if (activePointsCopy.isEmpty()) return
-        
+
         clusteringJob?.cancel()
         clusteringJob = scope.launch(kotlinx.coroutines.Dispatchers.Default) {
             isCalculating = true
-            
             val latRange = AppConstants.MAX_LAT - AppConstants.MIN_LAT
             val lonRange = AppConstants.MAX_LON - AppConstants.MIN_LON
-            
             val foodPointsSnapshot = gridMap.foodPoints.toList()
-            
+
             val points = activePointsCopy.map { gp ->
                 AlgoPoint(
                     x = (gp.longitude - AppConstants.MIN_LON) / lonRange,
                     y = (gp.latitude - AppConstants.MIN_LAT) / latRange
                 )
             }
-            
+
             val res = kMeans(points, kClusters, metric = selectedMetric)
-            
+
             val centroids = res.centroids.map { p ->
                 GeoPoint(
                     AppConstants.MIN_LAT + p.y * latRange,
                     AppConstants.MIN_LON + p.x * lonRange
                 )
             }
-        
+
             val markerData = activePointsCopy.mapIndexed { index, gp ->
                 val clusterIdx = res.labels.getOrNull(index) ?: 0
-                
                 val name = if (!useUserPoints) {
                     foodPointsSnapshot.find { it.lat == gp.latitude && it.lon == gp.longitude }?.name ?: "Заведение"
                 } else {
                     "Твоя точка ${index + 1}"
                 }
-                
+
                 val title = "$name (Кластер ${clusterIdx + 1})"
-                 val color = clusterColors[clusterIdx % clusterColors.size]
-                 
-                 ClusterMarkerData(gp, color, title)
-             }
+                val color = clusterColors[clusterIdx % clusterColors.size]
+                ClusterMarkerData(gp, color, title)
+            }
 
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 clusterCentroidsForOverlay = centroids
-                
                 clusterMarkers = markerData.map { data ->
                     Marker(MapView(context)).apply {
                         position = data.gp
                         icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, data.color)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         this.title = data.title
-                        
-                        if (useUserPoints) {
-                            infoWindow = null
-                        }
+                        if (useUserPoints) infoWindow = null
                     }
                 }
                 isCalculating = false
@@ -286,16 +264,14 @@ fun MapScreen(gridMap: GridMap) {
 
     fun calculatePath() {
         if (startPoint != null && endPoint != null) {
-
             routeToDraw = emptyList()
             currentAStarStep = null
-
             val startNode = geoPointToGridCell(startPoint!!, gridMap.width, gridMap.height)
             val goalNode = geoPointToGridCell(endPoint!!, gridMap.width, gridMap.height)
-            
+
             val snappedStart = gridMap.getNearestWalkable(startNode.x, startNode.y)
             val snappedGoal = gridMap.getNearestWalkable(goalNode.x, goalNode.y)
-            
+
             if (snappedStart == null || snappedGoal == null) {
                 routeToDraw = emptyList()
                 Toast.makeText(context, "Нельзя построить путь (точка в препятствии)", Toast.LENGTH_SHORT).show()
@@ -305,7 +281,7 @@ fun MapScreen(gridMap: GridMap) {
             scope.launch {
                 isAnimatingAStar = true
                 currentAStarStep = null
-                
+
                 val result = withContext(Dispatchers.Default) {
                     aStar.findPath(
                         start = snappedStart,
@@ -315,9 +291,7 @@ fun MapScreen(gridMap: GridMap) {
                         costBetween = { a, b -> gridMap.costBetween(a, b) },
                         onStep = { step ->
                             if (shouldAnimateAStar) {
-                                withContext(Dispatchers.Main) {
-                                    currentAStarStep = step
-                                }
+                                withContext(Dispatchers.Main) { currentAStarStep = step }
                                 delay(animationSpeed.toLong())
                             }
                         }
@@ -354,7 +328,7 @@ fun MapScreen(gridMap: GridMap) {
                     setMultiTouchControls(true)
                     isTilesScaledToDpi = true
                     zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                    
+
                     controller.setZoom(AppConstants.DEFAULT_ZOOM)
                     val centerLat = (AppConstants.MAX_LAT + AppConstants.MIN_LAT) / 2
                     val centerLon = (AppConstants.MAX_LON + AppConstants.MIN_LON) / 2
@@ -367,7 +341,6 @@ fun MapScreen(gridMap: GridMap) {
                     myLocationOverlay = locationOverlay
                 }
             }, update = { mapView ->
-
                 gridOverlay.gridEnabled = isGridEnabled
                 gridOverlay.showOnlyWalkable = showOnlyWalkable
                 gridOverlay.astarStep = currentAStarStep
@@ -380,26 +353,45 @@ fun MapScreen(gridMap: GridMap) {
                 }
 
                 mapView.overlays.clear()
-                
+
                 val rotationOverlay = RotationGestureOverlay(mapView)
                 rotationOverlay.isEnabled = !isDrawingMode
                 mapView.overlays.add(rotationOverlay)
                 mapView.overlays.add(gridOverlay)
-                
+
                 myLocationOverlay?.let {
                     if (!mapView.overlays.contains(it)) {
                         mapView.overlays.add(it)
                     }
                 }
 
+                val eventsReceiver = object : MapEventsReceiver {
+                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                        p?.let { gp ->
+                            if (currentSection == AppSection.NAVIGATION) {
+                                if (!isDrawingMode) {
+                                    if (aStarTargetMode == AStarTarget.START) startPoint = gp else endPoint = gp
+                                    if (startPoint != null && endPoint != null) routeToDraw = emptyList()
+                                }
+                                return true
+                            } else if (currentSection == AppSection.CLUSTERING) {
+                                if (useUserPoints) {
+                                    userPoints = userPoints + gp
+                                    return true
+                                }
+                            }
+                        }
+                        return false
+                    }
+                    override fun longPressHelper(p: GeoPoint?): Boolean = false
+                }
+                mapView.overlays.add(MapEventsOverlay(eventsReceiver))
 
                 val drawingOverlay = object : Overlay() {
                     override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
                         if (!isDrawingMode || currentSection != AppSection.NAVIGATION) return false
-                        
                         val gp = mapView.projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
                         val node = geoPointToGridCell(gp, gridMap.width, gridMap.height)
-
                         when (event.action) {
                             MotionEvent.ACTION_DOWN -> {
                                 firstLinePoint = node
@@ -410,7 +402,6 @@ fun MapScreen(gridMap: GridMap) {
                             }
                             MotionEvent.ACTION_MOVE -> {
                                 if (node != lastAddedNode) {
-
                                     if (lastAddedNode != null) {
                                         val lineNodes = getNodesOnLine(lastAddedNode!!, node)
                                         gridMap.dynamicObstacles.addAll(lineNodes)
@@ -443,7 +434,6 @@ fun MapScreen(gridMap: GridMap) {
                         marker.infoWindow = null
                         mapView.overlays.add(marker)
                     }
-
                     endPoint?.let {
                         val marker = Marker(mapView)
                         marker.position = it
@@ -453,7 +443,6 @@ fun MapScreen(gridMap: GridMap) {
                         marker.infoWindow = null
                         mapView.overlays.add(marker)
                     }
-
                     if (routeToDraw.isNotEmpty()) {
                         val polyline = Polyline(mapView)
                         polyline.setPoints(routeToDraw)
@@ -463,33 +452,6 @@ fun MapScreen(gridMap: GridMap) {
                         mapView.overlays.add(polyline)
                     }
                 }
-
-                val eventsReceiver = object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                        p?.let { gp ->
-                            if (currentSection == AppSection.NAVIGATION) {
-                                if (!isDrawingMode) {
-                                    if (aStarTargetMode == AStarTarget.START) {
-                                        startPoint = gp
-                                    } else {
-                                        endPoint = gp
-                                    }
-
-                                    if (startPoint != null && endPoint != null) {
-                                        routeToDraw = emptyList()
-                                    }
-                                }
-                            } else if (currentSection == AppSection.CLUSTERING) {
-                                if (useUserPoints) {
-                                    userPoints = userPoints + gp
-                                }
-                            }
-                        }
-                        return true
-                    }
-                    override fun longPressHelper(p: GeoPoint?): Boolean = false
-                }
-                mapView.overlays.add(MapEventsOverlay(eventsReceiver))
 
                 if (currentSection == AppSection.CLUSTERING) {
                     if (useUserPoints) {
@@ -504,29 +466,42 @@ fun MapScreen(gridMap: GridMap) {
                             mapView.overlays.add(tempMarker)
                         }
                     }
+                    clusterMarkers.forEach { marker ->
+                        val m = Marker(mapView).apply {
+                            position = marker.position
+                            icon = marker.icon
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            title = marker.title
+                            if (useUserPoints) infoWindow = null
+                        }
+                        mapView.overlays.add(m)
+                    }
+                }
 
-                     clusterMarkers.forEach { marker ->
-                         val m = Marker(mapView).apply {
-                             position = marker.position
-                             icon = marker.icon
-                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                             title = marker.title
+                if (currentSection == AppSection.NEURAL) {
+                    gridMap.foodPoints.forEach { foodPoint ->
+                        val marker = Marker(mapView).apply {
+                            position = GeoPoint(foodPoint.lat, foodPoint.lon)
+                            icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, TSU_LightBlue)
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            title = foodPoint.name
+                            infoWindow = null
+                            setOnMarkerClickListener { _, _ ->
+                                selectedEstablishmentForRating = foodPoint
+                                true
+                            }
+                        }
+                        mapView.overlays.add(marker)
+                    }
+                }
 
-                             if (useUserPoints) {
-                                 infoWindow = null
-                             }
-                         }
-                         mapView.overlays.add(m)
-                     }
-                 }
-                
                 mapView.invalidate()
             }
         )
 
         NavigationBar(
             modifier = Modifier.align(Alignment.BottomCenter),
-            containerColor = ComposeColor.White, 
+            containerColor = ComposeColor.White,
             contentColor = TSU_LightBlue
         ) {
             AppSection.values().forEach { section ->
@@ -534,12 +509,12 @@ fun MapScreen(gridMap: GridMap) {
                     selected = currentSection == section,
                     onClick = { currentSection = section },
                     icon = { },
-                    label = { 
+                    label = {
                         Text(
-                            section.title, 
+                            section.title,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = if (currentSection == section) TSU_LightBlue else ComposeColor.Gray
-                        ) 
+                        )
                     },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = TSU_LightBlue,
@@ -557,8 +532,7 @@ fun MapScreen(gridMap: GridMap) {
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
                 .padding(top = 48.dp)
-                .background(ComposeColor.White.copy(alpha = 0.8f),
-                    shape = MaterialTheme.shapes.medium)
+                .background(ComposeColor.White.copy(alpha = 0.8f), shape = MaterialTheme.shapes.medium)
                 .padding(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -582,8 +556,7 @@ fun MapScreen(gridMap: GridMap) {
                 onClick = {
                     myLocationOverlay?.let { overlay ->
                         val myLocation = overlay.myLocation
-                        if (myLocation != null) {
-                        } else {
+                        if (myLocation == null) {
                             Toast.makeText(context, "Определяем местоположение...", Toast.LENGTH_SHORT).show()
                         }
                         overlay.enableFollowLocation()
@@ -591,11 +564,7 @@ fun MapScreen(gridMap: GridMap) {
                 },
                 modifier = Modifier.size(40.dp).padding(4.dp)
             ) {
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = "My Location",
-                    tint = TSU_LightBlue
-                )
+                Icon(Icons.Default.LocationOn, contentDescription = "My Location", tint = TSU_LightBlue)
             }
         }
 
@@ -606,9 +575,7 @@ fun MapScreen(gridMap: GridMap) {
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
                     .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(ComposeColor.White.copy(alpha = 0.9f), ComposeColor.White)
-                        ),
+                        brush = Brush.verticalGradient(colors = listOf(ComposeColor.White.copy(alpha = 0.9f), ComposeColor.White)),
                         shape = RoundedCornerShape(24.dp)
                     )
                     .clip(RoundedCornerShape(24.dp))
@@ -620,28 +587,20 @@ fun MapScreen(gridMap: GridMap) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Навигация A*", style = MaterialTheme.typography.titleLarge, color = TSU_DarkBlue, fontWeight = FontWeight.ExtraBold)
-                    IconButton(onClick = {
-                        gridMap.dynamicObstacles.clear()
-                        clearMap()
-                    }) {
+                    IconButton(onClick = { gridMap.dynamicObstacles.clear(); clearMap() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = TSU_LightBlue)
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
-
                     Surface(
                         onClick = { isDrawingMode = !isDrawingMode; firstLinePoint = null },
                         color = if (isDrawingMode) TSU_LightBlue else ComposeColor.LightGray.copy(alpha = 0.3f),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.height(40.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(modifier = Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 if (isDrawingMode) Icons.Default.Edit else Icons.Default.Create,
                                 contentDescription = null,
@@ -649,42 +608,27 @@ fun MapScreen(gridMap: GridMap) {
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                if (isDrawingMode) "Рисовашка ВКЛ" else "Рисовашка",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (isDrawingMode) ComposeColor.White else ComposeColor.Gray
-                            )
+                            Text(if (isDrawingMode) "Рисовашка ВКЛ" else "Рисовашка", style = MaterialTheme.typography.labelLarge, color = if (isDrawingMode) ComposeColor.White else ComposeColor.Gray)
                         }
                     }
 
                     if (!isDrawingMode) {
                         Spacer(modifier = Modifier.width(8.dp))
-
-                        Surface(
-                            color = ComposeColor.LightGray.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(40.dp)
-                        ) {
+                        Surface(color = ComposeColor.LightGray.copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp), modifier = Modifier.height(40.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 FilterChip(
                                     selected = aStarTargetMode == AStarTarget.START,
                                     onClick = { aStarTargetMode = AStarTarget.START },
                                     label = { Text("Старт") },
                                     modifier = Modifier.padding(horizontal = 4.dp),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ComposeColor.Green.copy(alpha = 0.2f),
-                                        selectedLabelColor = ComposeColor.Black
-                                    )
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ComposeColor.Green.copy(alpha = 0.2f), selectedLabelColor = ComposeColor.Black)
                                 )
                                 FilterChip(
                                     selected = aStarTargetMode == AStarTarget.END,
                                     onClick = { aStarTargetMode = AStarTarget.END },
                                     label = { Text("Финиш") },
                                     modifier = Modifier.padding(horizontal = 4.dp),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = ComposeColor.Red.copy(alpha = 0.2f),
-                                        selectedLabelColor = ComposeColor.Black
-                                    )
+                                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ComposeColor.Red.copy(alpha = 0.2f), selectedLabelColor = ComposeColor.Black)
                                 )
                             }
                         }
@@ -702,19 +646,14 @@ fun MapScreen(gridMap: GridMap) {
                             value = animationSpeed,
                             onValueChange = { animationSpeed = it },
                             valueRange = 1f..200f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = TSU_LightBlue,
-                                activeTrackColor = TSU_LightBlue,
-                                inactiveTrackColor = TSU_LightBlue.copy(alpha = 0.2f)
-                            )
+                            colors = SliderDefaults.colors(thumbColor = TSU_LightBlue, activeTrackColor = TSU_LightBlue, inactiveTrackColor = TSU_LightBlue.copy(alpha = 0.2f))
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-
                 Button(
-                    onClick = { calculatePath() }, 
+                    onClick = { calculatePath() },
                     enabled = startPoint != null && endPoint != null && !isAnimatingAStar,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(16.dp),
@@ -734,64 +673,35 @@ fun MapScreen(gridMap: GridMap) {
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
                     .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(ComposeColor.White.copy(alpha = 0.9f), ComposeColor.White)
-                        ),
+                        brush = Brush.verticalGradient(colors = listOf(ComposeColor.White.copy(alpha = 0.9f), ComposeColor.White)),
                         shape = RoundedCornerShape(24.dp)
                     )
                     .padding(20.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Кластеризация", style = MaterialTheme.typography.titleLarge, color = TSU_DarkBlue, fontWeight = FontWeight.ExtraBold)
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Метрика:", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = selectedMetric == DistanceMetric.EUCLIDEAN,
-                        onClick = { selectedMetric = DistanceMetric.EUCLIDEAN; calculateClusters() },
-                        label = { Text("Евклид") }
-                    )
+                    FilterChip(selected = selectedMetric == DistanceMetric.EUCLIDEAN, onClick = { selectedMetric = DistanceMetric.EUCLIDEAN; calculateClusters() }, label = { Text("Евклид") })
                     Spacer(modifier = Modifier.width(4.dp))
-                    FilterChip(
-                        selected = selectedMetric == DistanceMetric.MANHATTAN,
-                        onClick = { selectedMetric = DistanceMetric.MANHATTAN; calculateClusters() },
-                        label = { Text("Манхэттен") }
-                    )
+                    FilterChip(selected = selectedMetric == DistanceMetric.MANHATTAN, onClick = { selectedMetric = DistanceMetric.MANHATTAN; calculateClusters() }, label = { Text("Манхэттен") })
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Точки:", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = !useUserPoints,
-                        onClick = { useUserPoints = false; clusterMarkers = emptyList() },
-                        label = { Text("Карта") }
-                    )
+                    FilterChip(selected = !useUserPoints, onClick = { useUserPoints = false; clusterMarkers = emptyList() }, label = { Text("Карта") })
                     Spacer(modifier = Modifier.width(4.dp))
-                    FilterChip(
-                        selected = useUserPoints,
-                        onClick = { useUserPoints = true; clusterMarkers = emptyList() },
-                        label = { Text("Свои") }
-                    )
+                    FilterChip(selected = useUserPoints, onClick = { useUserPoints = true; clusterMarkers = emptyList() }, label = { Text("Свои") })
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Кластеров: $kClusters", style = MaterialTheme.typography.bodySmall)
-                    Slider(
-                        value = kClusters.toFloat(),
-                        onValueChange = { kClusters = it.toInt() },
-                        valueRange = 2f..9f,
-                        modifier = Modifier.weight(1f),
-                        colors = SliderDefaults.colors(thumbColor = TSU_LightBlue, activeTrackColor = TSU_LightBlue)
-                    )
+                    Slider(value = kClusters.toFloat(), onValueChange = { kClusters = it.toInt() }, valueRange = 2f..9f, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = TSU_LightBlue, activeTrackColor = TSU_LightBlue))
                 }
 
                 Button(
@@ -807,7 +717,32 @@ fun MapScreen(gridMap: GridMap) {
                     }
                 }
             }
+        } else if (currentSection == AppSection.NEURAL) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
+                    .background(
+                        brush = Brush.verticalGradient(colors = listOf(ComposeColor.White.copy(alpha = 0.9f), ComposeColor.White)),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Оценка заведения", style = MaterialTheme.typography.titleLarge, color = TSU_DarkBlue, fontWeight = FontWeight.ExtraBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Нажмите на синюю точку (заведение) на карте, чтобы нарисовать для него оценку", textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = ComposeColor.Gray)
+            }
         }
+    }
+
+    if (selectedEstablishmentForRating != null) {
+        RatingScreen(
+            establishmentName = selectedEstablishmentForRating!!.name,
+            establishmentPoint = GeoPoint(selectedEstablishmentForRating!!.lat, selectedEstablishmentForRating!!.lon),
+            onBack = { selectedEstablishmentForRating = null }
+        )
     }
 }
 
@@ -838,24 +773,17 @@ fun createAStarIcon(context: Context, sizePx: Int, isStart: Boolean): Drawable {
         style = Paint.Style.FILL
         isAntiAlias = true
     }
-
     canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 2f, paint)
-
     paint.apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 3f
     }
     canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 1f, paint)
-    
     return BitmapDrawable(context.resources, bitmap)
 }
 
-fun createColoredDotIcon(
-    context: Context, 
-    sizePx: Int, 
-    composeColor: androidx.compose.ui.graphics.Color
-): Drawable {
+fun createColoredDotIcon(context: Context, sizePx: Int, composeColor: androidx.compose.ui.graphics.Color): Drawable {
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint().apply {
@@ -868,15 +796,12 @@ fun createColoredDotIcon(
         style = Paint.Style.FILL
         isAntiAlias = true
     }
-    
     canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 2f, paint)
-    
     paint.apply {
         color = android.graphics.Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 3f
     }
     canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 1f, paint)
-    
     return BitmapDrawable(context.resources, bitmap)
 }
