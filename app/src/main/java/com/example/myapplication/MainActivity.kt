@@ -126,7 +126,7 @@ fun SplashScreen() {
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
-            text = "AlgoMap",
+            text = "TSU.AlgoMap",
             style = MaterialTheme.typography.headlineSmall.copy(
                 color = TSU_LightBlue,
                 fontWeight = FontWeight.Bold,

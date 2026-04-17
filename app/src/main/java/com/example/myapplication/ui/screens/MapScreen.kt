@@ -349,183 +349,189 @@ fun MapScreen(gridMap: GridMap) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { context ->
-                MapView(context).apply {
-                    setTileSource(TileSourceFactory.MAPNIK)
-                    setMultiTouchControls(true)
-                    isTilesScaledToDpi = true
-                    zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                    
-                    controller.setZoom(AppConstants.DEFAULT_ZOOM)
-                    val centerLat = (AppConstants.MAX_LAT + AppConstants.MIN_LAT) / 2
-                    val centerLon = (AppConstants.MAX_LON + AppConstants.MIN_LON) / 2
-                    controller.setCenter(GeoPoint(centerLat, centerLon))
-                    controller.setZoom(AppConstants.DEFAULT_ZOOM)
-
-                    val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(context), this)
-                    locationOverlay.enableMyLocation()
-                    locationOverlay.enableFollowLocation()
-                    myLocationOverlay = locationOverlay
-                }
-            }, update = { mapView ->
-
-                gridOverlay.gridEnabled = isGridEnabled
-                gridOverlay.showOnlyWalkable = showOnlyWalkable
-                gridOverlay.astarStep = currentAStarStep
-
-                if (currentSection == AppSection.CLUSTERING) {
-                    gridOverlay.clusterCentroids = clusterCentroidsForOverlay
-                    gridOverlay.clusterColors = clusterColorsInt
-                } else {
-                    gridOverlay.clusterCentroids = emptyList()
-                }
-
-                mapView.overlays.clear()
-                
-                val rotationOverlay = RotationGestureOverlay(mapView)
-                rotationOverlay.isEnabled = !isDrawingMode
-                mapView.overlays.add(rotationOverlay)
-                mapView.overlays.add(gridOverlay)
-                
-                myLocationOverlay?.let {
-                    if (!mapView.overlays.contains(it)) {
-                        mapView.overlays.add(it)
-                    }
-                }
-
-
-                val drawingOverlay = object : Overlay() {
-                    override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
-                        if (!isDrawingMode || currentSection != AppSection.NAVIGATION) return false
+        if (currentSection == AppSection.TREE) {
+            Box(modifier = Modifier.fillMaxSize().background(ComposeColor.White).padding(bottom = 80.dp)) {
+                DecisionTreeScreen()
+            }
+        } else {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    MapView(context).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        isTilesScaledToDpi = true
+                        zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                         
-                        val gp = mapView.projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
-                        val node = geoPointToGridCell(gp, gridMap.width, gridMap.height)
+                        controller.setZoom(AppConstants.DEFAULT_ZOOM)
+                        val centerLat = (AppConstants.MAX_LAT + AppConstants.MIN_LAT) / 2
+                        val centerLon = (AppConstants.MAX_LON + AppConstants.MIN_LON) / 2
+                        controller.setCenter(GeoPoint(centerLat, centerLon))
+                        controller.setZoom(AppConstants.DEFAULT_ZOOM)
 
-                        when (event.action) {
-                            MotionEvent.ACTION_DOWN -> {
-                                firstLinePoint = node
-                                gridMap.dynamicObstacles.add(node)
-                                lastAddedNode = node
-                                mapView.invalidate()
-                                return true
-                            }
-                            MotionEvent.ACTION_MOVE -> {
-                                if (node != lastAddedNode) {
+                        val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(context), this)
+                        locationOverlay.enableMyLocation()
+                        locationOverlay.enableFollowLocation()
+                        myLocationOverlay = locationOverlay
+                    }
+                }, update = { mapView ->
 
-                                    if (lastAddedNode != null) {
-                                        val lineNodes = getNodesOnLine(lastAddedNode!!, node)
-                                        gridMap.dynamicObstacles.addAll(lineNodes)
-                                    } else {
-                                        gridMap.dynamicObstacles.add(node)
-                                    }
+                    gridOverlay.gridEnabled = isGridEnabled
+                    gridOverlay.showOnlyWalkable = showOnlyWalkable
+                    gridOverlay.astarStep = currentAStarStep
+
+                    if (currentSection == AppSection.CLUSTERING) {
+                        gridOverlay.clusterCentroids = clusterCentroidsForOverlay
+                        gridOverlay.clusterColors = clusterColorsInt
+                    } else {
+                        gridOverlay.clusterCentroids = emptyList()
+                    }
+
+                    mapView.overlays.clear()
+                    
+                    val rotationOverlay = RotationGestureOverlay(mapView)
+                    rotationOverlay.isEnabled = !isDrawingMode
+                    mapView.overlays.add(rotationOverlay)
+                    mapView.overlays.add(gridOverlay)
+                    
+                    myLocationOverlay?.let {
+                        if (!mapView.overlays.contains(it)) {
+                            mapView.overlays.add(it)
+                        }
+                    }
+
+
+                    val drawingOverlay = object : Overlay() {
+                        override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
+                            if (!isDrawingMode || currentSection != AppSection.NAVIGATION) return false
+                            
+                            val gp = mapView.projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
+                            val node = geoPointToGridCell(gp, gridMap.width, gridMap.height)
+
+                            when (event.action) {
+                                MotionEvent.ACTION_DOWN -> {
+                                    firstLinePoint = node
+                                    gridMap.dynamicObstacles.add(node)
                                     lastAddedNode = node
                                     mapView.invalidate()
+                                    return true
                                 }
-                                return true
-                            }
-                            MotionEvent.ACTION_UP -> {
-                                firstLinePoint = null
-                                lastAddedNode = null
-                                return true
-                            }
-                        }
-                        return false
-                    }
-                }
-                mapView.overlays.add(drawingOverlay)
+                                MotionEvent.ACTION_MOVE -> {
+                                    if (node != lastAddedNode) {
 
-                if (currentSection == AppSection.NAVIGATION) {
-                    startPoint?.let {
-                        val marker = Marker(mapView)
-                        marker.position = it
-                        marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, true)
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.title = "Старт"
-                        marker.infoWindow = null
-                        mapView.overlays.add(marker)
-                    }
-
-                    endPoint?.let {
-                        val marker = Marker(mapView)
-                        marker.position = it
-                        marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, false)
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.title = "Финиш"
-                        marker.infoWindow = null
-                        mapView.overlays.add(marker)
-                    }
-
-                    if (routeToDraw.isNotEmpty()) {
-                        val polyline = Polyline(mapView)
-                        polyline.setPoints(routeToDraw)
-                        polyline.outlinePaint.color = ROUTE_COLOR
-                        polyline.outlinePaint.strokeWidth = AppConstants.ROUTE_WIDTH_PX
-                        polyline.infoWindow = null
-                        mapView.overlays.add(polyline)
-                    }
-                }
-
-                val eventsReceiver = object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                        p?.let { gp ->
-                            if (currentSection == AppSection.NAVIGATION) {
-                                if (!isDrawingMode) {
-                                    if (aStarTargetMode == AStarTarget.START) {
-                                        startPoint = gp
-                                    } else {
-                                        endPoint = gp
+                                        if (lastAddedNode != null) {
+                                            val lineNodes = getNodesOnLine(lastAddedNode!!, node)
+                                            gridMap.dynamicObstacles.addAll(lineNodes)
+                                        } else {
+                                            gridMap.dynamicObstacles.add(node)
+                                        }
+                                        lastAddedNode = node
+                                        mapView.invalidate()
                                     }
+                                    return true
+                                }
+                                MotionEvent.ACTION_UP -> {
+                                    firstLinePoint = null
+                                    lastAddedNode = null
+                                    return true
+                                }
+                            }
+                            return false
+                        }
+                    }
+                    mapView.overlays.add(drawingOverlay)
 
-                                    if (startPoint != null && endPoint != null) {
-                                        routeToDraw = emptyList()
+                    if (currentSection == AppSection.NAVIGATION) {
+                        startPoint?.let {
+                            val marker = Marker(mapView)
+                            marker.position = it
+                            marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, true)
+                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            marker.title = "Старт"
+                            marker.infoWindow = null
+                            mapView.overlays.add(marker)
+                        }
+
+                        endPoint?.let {
+                            val marker = Marker(mapView)
+                            marker.position = it
+                            marker.icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, false)
+                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            marker.title = "Финиш"
+                            marker.infoWindow = null
+                            mapView.overlays.add(marker)
+                        }
+
+                        if (routeToDraw.isNotEmpty()) {
+                            val polyline = Polyline(mapView)
+                            polyline.setPoints(routeToDraw)
+                            polyline.outlinePaint.color = ROUTE_COLOR
+                            polyline.outlinePaint.strokeWidth = AppConstants.ROUTE_WIDTH_PX
+                            polyline.infoWindow = null
+                            mapView.overlays.add(polyline)
+                        }
+                    }
+
+                    val eventsReceiver = object : MapEventsReceiver {
+                        override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                            p?.let { gp ->
+                                if (currentSection == AppSection.NAVIGATION) {
+                                    if (!isDrawingMode) {
+                                        if (aStarTargetMode == AStarTarget.START) {
+                                            startPoint = gp
+                                        } else {
+                                            endPoint = gp
+                                        }
+
+                                        if (startPoint != null && endPoint != null) {
+                                            routeToDraw = emptyList()
+                                        }
+                                    }
+                                } else if (currentSection == AppSection.CLUSTERING) {
+                                    if (useUserPoints) {
+                                        userPoints = userPoints + gp
                                     }
                                 }
-                            } else if (currentSection == AppSection.CLUSTERING) {
-                                if (useUserPoints) {
-                                    userPoints = userPoints + gp
+                            }
+                            return true
+                        }
+                        override fun longPressHelper(p: GeoPoint?): Boolean = false
+                    }
+                    mapView.overlays.add(MapEventsOverlay(eventsReceiver))
+
+                    if (currentSection == AppSection.CLUSTERING) {
+                        if (useUserPoints) {
+                            userPoints.toList().forEachIndexed { index, gp ->
+                                val tempMarker = Marker(mapView).apply {
+                                    position = gp
+                                    icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, ComposeColor.Gray)
+                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                    title = "Твоя точка ${index + 1}"
+                                    infoWindow = null
                                 }
+                                mapView.overlays.add(tempMarker)
                             }
                         }
-                        return true
-                    }
-                    override fun longPressHelper(p: GeoPoint?): Boolean = false
-                }
-                mapView.overlays.add(MapEventsOverlay(eventsReceiver))
 
-                if (currentSection == AppSection.CLUSTERING) {
-                    if (useUserPoints) {
-                        userPoints.toList().forEachIndexed { index, gp ->
-                            val tempMarker = Marker(mapView).apply {
-                                position = gp
-                                icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, ComposeColor.Gray)
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                title = "Твоя точка ${index + 1}"
-                                infoWindow = null
-                            }
-                            mapView.overlays.add(tempMarker)
-                        }
-                    }
+                         clusterMarkers.forEach { marker ->
+                             val m = Marker(mapView).apply {
+                                 position = marker.position
+                                 icon = marker.icon
+                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                 title = marker.title
 
-                     clusterMarkers.forEach { marker ->
-                         val m = Marker(mapView).apply {
-                             position = marker.position
-                             icon = marker.icon
-                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                             title = marker.title
-
-                             if (useUserPoints) {
-                                 infoWindow = null
+                                 if (useUserPoints) {
+                                     infoWindow = null
+                                 }
                              }
+                             mapView.overlays.add(m)
                          }
-                         mapView.overlays.add(m)
                      }
-                 }
-                
-                mapView.invalidate()
-            }
-        )
+                    
+                    mapView.invalidate()
+                }
+            )
+        }
 
         NavigationBar(
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -559,10 +565,6 @@ fun MapScreen(gridMap: GridMap) {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 16.dp)
-                .background(
-                    color = ComposeColor.White.copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(16.dp)
-                )
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
             Image(
