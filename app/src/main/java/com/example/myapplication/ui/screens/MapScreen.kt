@@ -50,9 +50,12 @@ import com.example.myapplication.ui.theme.GRID_WALKABLE_COLOR
 import com.example.myapplication.ui.theme.GRID_OBSTACLE_COLOR
 import com.example.myapplication.data.DynamicObstacle
 import com.example.myapplication.data.ObstacleType
+import com.example.myapplication.R
 import android.widget.Toast
 import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
@@ -550,6 +553,23 @@ fun MapScreen(gridMap: GridMap) {
                     )
                 )
             }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 16.dp)
+                .background(
+                    color = ComposeColor.White.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.tsu_logo_basic_sign),
+                contentDescription = "TSU Logo",
+                modifier = Modifier.height(64.dp)
+            )
         }
 
         Column(
