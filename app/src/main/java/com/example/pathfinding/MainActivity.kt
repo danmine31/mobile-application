@@ -19,7 +19,6 @@ import com.example.pathfinding.data.GridMap
 import com.example.pathfinding.data.GridNode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.example.pathfinding.ClusteringScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,21 +32,7 @@ class MainActivity : ComponentActivity() {
         val gridMap = GridMap(width, height, walkable)
 
         setContent {
-            var currentScreen by remember { mutableStateOf("pathfinding") }
-            Column {
-                Row {
-                    Button(onClick = { currentScreen = "pathfinding" }) {
-                        Text("Поиск пути")
-                    }
-                    Button(onClick = { currentScreen = "clustering" }) {
-                        Text("Кластеризация")
-                    }
-                }
-                when (currentScreen) {
-                    "pathfinding" -> AStarDemo(gridMap)
-                    "clustering" -> ClusteringScreen()
-                }
-            }
+            AStarDemo(gridMap)
         }
     }
 }
