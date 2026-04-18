@@ -66,18 +66,26 @@ class GridOverlay(
         val latRange = AppConstants.MAX_LAT - AppConstants.MIN_LAT
         val lonRange = AppConstants.MAX_LON - AppConstants.MIN_LON
 
-        val startX = (((viewPort.lonWest - AppConstants.MIN_LON) / lonRange) * gridMap.width).toInt().coerceIn(0, gridMap.width - 1)
-        val endX = (((viewPort.lonEast - AppConstants.MIN_LON) / lonRange) * gridMap.width).toInt().coerceIn(0, gridMap.width - 1)
-        val startY = (((viewPort.latSouth - AppConstants.MIN_LAT) / latRange) * gridMap.height).toInt().coerceIn(0, gridMap.height - 1)
-        val endY = (((viewPort.latNorth - AppConstants.MIN_LAT) / latRange) * gridMap.height).toInt().coerceIn(0, gridMap.height - 1)
+        val startX =
+            (((viewPort.lonWest - AppConstants.MIN_LON) / lonRange) * gridMap.width).toInt()
+                .coerceIn(0, gridMap.width - 1)
+        val endX = (((viewPort.lonEast - AppConstants.MIN_LON) / lonRange) * gridMap.width).toInt()
+            .coerceIn(0, gridMap.width - 1)
+        val startY =
+            (((viewPort.latSouth - AppConstants.MIN_LAT) / latRange) * gridMap.height).toInt()
+                .coerceIn(0, gridMap.height - 1)
+        val endY =
+            (((viewPort.latNorth - AppConstants.MIN_LAT) / latRange) * gridMap.height).toInt()
+                .coerceIn(0, gridMap.height - 1)
 
         val gp0 = gridCellToGeoPoint(GridNode(startX, startY), gridMap.width, gridMap.height)
-        val gp1 = gridCellToGeoPoint(GridNode(startX + 1, startY + 1), gridMap.width, gridMap.height)
-        
+        val gp1 =
+            gridCellToGeoPoint(GridNode(startX + 1, startY + 1), gridMap.width, gridMap.height)
+
         projection.toPixels(gp0, pDraw)
         val px0 = pDraw.x
         val py0 = pDraw.y
-        
+
         projection.toPixels(gp1, pDraw)
         val px1 = pDraw.x
         val py1 = pDraw.y
@@ -90,10 +98,10 @@ class GridOverlay(
                 for (y in startY..endY) {
                     val isBaseWalkable = gridMap.walkable[x][y]
                     if (showOnlyWalkable && !isBaseWalkable) continue
-                    
+
                     val gp = gridCellToGeoPoint(GridNode(x, y), gridMap.width, gridMap.height)
                     projection.toPixels(gp, pDraw)
-                    
+
                     val currentPaint = if (isBaseWalkable) paintWalkable else paintObstacle
                     canvas.drawRect(
                         pDraw.x.toFloat(),
@@ -122,22 +130,41 @@ class GridOverlay(
 
         astarStep?.let { step ->
             val visibleOpen = step.openSet.filter { it.x in startX..endX && it.y in startY..endY }
-            val visibleClosed = step.closedSet.filter { it.x in startX..endX && it.y in startY..endY }
-            
+            val visibleClosed =
+                step.closedSet.filter { it.x in startX..endX && it.y in startY..endY }
+
             visibleOpen.forEach { node ->
                 val gp = gridCellToGeoPoint(node, gridMap.width, gridMap.height)
                 projection.toPixels(gp, pDraw)
-                canvas.drawRect(pDraw.x.toFloat(), pDraw.y.toFloat() - cellHeightPx, pDraw.x.toFloat() + cellWidthPx, pDraw.y.toFloat(), paintAStarOpen)
+                canvas.drawRect(
+                    pDraw.x.toFloat(),
+                    pDraw.y.toFloat() - cellHeightPx,
+                    pDraw.x.toFloat() + cellWidthPx,
+                    pDraw.y.toFloat(),
+                    paintAStarOpen
+                )
             }
             visibleClosed.forEach { node ->
                 val gp = gridCellToGeoPoint(node, gridMap.width, gridMap.height)
                 projection.toPixels(gp, pDraw)
-                canvas.drawRect(pDraw.x.toFloat(), pDraw.y.toFloat() - cellHeightPx, pDraw.x.toFloat() + cellWidthPx, pDraw.y.toFloat(), paintAStarClosed)
+                canvas.drawRect(
+                    pDraw.x.toFloat(),
+                    pDraw.y.toFloat() - cellHeightPx,
+                    pDraw.x.toFloat() + cellWidthPx,
+                    pDraw.y.toFloat(),
+                    paintAStarClosed
+                )
             }
             if (step.current.x in startX..endX && step.current.y in startY..endY) {
                 val gp = gridCellToGeoPoint(step.current, gridMap.width, gridMap.height)
                 projection.toPixels(gp, pDraw)
-                canvas.drawRect(pDraw.x.toFloat(), pDraw.y.toFloat() - cellHeightPx, pDraw.x.toFloat() + cellWidthPx, pDraw.y.toFloat(), paintAStarCurrent)
+                canvas.drawRect(
+                    pDraw.x.toFloat(),
+                    pDraw.y.toFloat() - cellHeightPx,
+                    pDraw.x.toFloat() + cellWidthPx,
+                    pDraw.y.toFloat(),
+                    paintAStarCurrent
+                )
             }
         }
 
@@ -149,7 +176,7 @@ class GridOverlay(
                     val gp = gridCellToGeoPoint(GridNode(x, y), gridMap.width, gridMap.height)
                     var closestIdx = -1
                     var minDist = Double.MAX_VALUE
-                    
+
                     for (i in clusterCentroids.indices) {
                         val d = gp.distanceToAsDouble(clusterCentroids[i])
                         if (d < minDist) {
@@ -157,13 +184,13 @@ class GridOverlay(
                             closestIdx = i
                         }
                     }
-                    
+
                     if (closestIdx != -1) {
                         projection.toPixels(gp, pDraw)
                         val color = clusterColors[closestIdx % clusterColors.size]
-                        val paint = Paint().apply { 
+                        val paint = Paint().apply {
                             this.color = color
-                            alpha = 60 
+                            alpha = 60
                         }
                         canvas.drawRect(
                             pDraw.x.toFloat(),

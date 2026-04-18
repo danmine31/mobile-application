@@ -30,14 +30,14 @@ import kotlinx.coroutines.launch
 fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack: () -> Unit) {
     val gridSize = 50
     val totalPixels = gridSize * gridSize
-    
+
     var gridData by remember { mutableStateOf(BooleanArray(totalPixels) { false }) }
     var drawTrigger by remember { mutableStateOf(0) }
 
     var recognizedDigit by remember { mutableStateOf<Int?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var isNNLoading by remember { mutableStateOf(true) }
-    
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val neuralNetwork = remember { NeuralNetwork(context) }
@@ -92,7 +92,13 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
                         .pointerInput(gridSize) {
                             detectDragGestures { change, _ ->
                                 change.consume()
-                                if (updateGridArray(change.position, size.width, gridSize, gridData)) {
+                                if (updateGridArray(
+                                        change.position,
+                                        size.width,
+                                        gridSize,
+                                        gridData
+                                    )
+                                ) {
                                     drawTrigger++
                                 }
                             }
@@ -114,7 +120,10 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
                                         drawRect(
                                             color = Color.White,
                                             topLeft = Offset(j * pixelSize, i * pixelSize),
-                                            size = androidx.compose.ui.geometry.Size(pixelSize, pixelSize)
+                                            size = androidx.compose.ui.geometry.Size(
+                                                pixelSize,
+                                                pixelSize
+                                            )
                                         )
                                     }
                                 }
@@ -156,7 +165,9 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
                             drawTrigger++
                             recognizedDigit = null
                         },
-                        modifier = Modifier.weight(1f).height(56.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TSU_LightBlue)
                     ) {
@@ -179,7 +190,9 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
                             }
                         },
                         enabled = !isProcessing,
-                        modifier = Modifier.weight(1f).height(56.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = TSU_LightBlue)
                     ) {
@@ -191,7 +204,9 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
 
                 Button(
                     onClick = { onBack() },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = TSU_DarkBlue)
                 ) {
@@ -202,14 +217,19 @@ fun RatingScreen(establishmentName: String, establishmentPoint: GeoPoint, onBack
     }
 }
 
-private fun updateGridArray(touchPos: Offset, canvasWidth: Int, gridSize: Int, gridData: BooleanArray): Boolean {
+private fun updateGridArray(
+    touchPos: Offset,
+    canvasWidth: Int,
+    gridSize: Int,
+    gridData: BooleanArray
+): Boolean {
     val pixelSize = canvasWidth.toFloat() / gridSize
     val col = (touchPos.x / pixelSize).toInt()
     val row = (touchPos.y / pixelSize).toInt()
     var changed = false
 
     if (col in 0 until gridSize && row in 0 until gridSize) {
-        val offsets = listOf(Pair(0,0), Pair(1,0), Pair(-1,0), Pair(0,1), Pair(0,-1))
+        val offsets = listOf(Pair(0, 0), Pair(1, 0), Pair(-1, 0), Pair(0, 1), Pair(0, -1))
         for (off in offsets) {
             val r = row + off.second
             val c = col + off.first
@@ -225,7 +245,10 @@ private fun updateGridArray(touchPos: Offset, canvasWidth: Int, gridSize: Int, g
 }
 
 private fun processGridArrayForNN(gridData: BooleanArray, gridSize: Int): DoubleArray? {
-    var minX = gridSize; var maxX = 0; var minY = gridSize; var maxY = 0
+    var minX = gridSize;
+    var maxX = 0;
+    var minY = gridSize;
+    var maxY = 0
     var hasPixels = false
     for (y in 0 until gridSize) {
         for (x in 0 until gridSize) {

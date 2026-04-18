@@ -44,6 +44,7 @@ class MapGridGenerator(private val context: Context) {
                             currentAmenity = ""
                             currentName = ""
                         }
+
                         "way" -> {
                             currentWayNodes.clear()
                             isObstacle = false
@@ -51,18 +52,20 @@ class MapGridGenerator(private val context: Context) {
                             currentAmenity = ""
                             currentName = ""
                         }
+
                         "nd" -> {
                             val ref = parser.getAttributeValue(null, "ref").toLong()
                             currentWayNodes.add(ref)
                         }
+
                         "tag" -> {
                             val k = parser.getAttributeValue(null, "k")
                             val v = parser.getAttributeValue(null, "v")
 
                             if (k == "highway") {
                                 when (v) {
-                                    "footway", "path", "pedestrian", "service", "steps", 
-                                    "living_street", "track", "residential", "unclassified", 
+                                    "footway", "path", "pedestrian", "service", "steps",
+                                    "living_street", "track", "residential", "unclassified",
                                     "sidewalk", "corridor", "platform", "cycleway", "road",
                                     "primary", "secondary", "tertiary", "trunk", "motorway",
                                     "primary_link", "secondary_link", "tertiary_link" -> {
@@ -76,8 +79,9 @@ class MapGridGenerator(private val context: Context) {
                             }
 
                             if (k == "amenity") {
-                                if (v == "cafe" || v == "restaurant" || v == "fast_food" || 
-                                    v == "food_court" || v == "pub" || v == "bar" || v == "canteen") {
+                                if (v == "cafe" || v == "restaurant" || v == "fast_food" ||
+                                    v == "food_court" || v == "pub" || v == "bar" || v == "canteen"
+                                ) {
                                     currentAmenity = v
                                 }
                             }
@@ -92,15 +96,18 @@ class MapGridGenerator(private val context: Context) {
                         }
                     }
                 }
+
                 XmlPullParser.END_TAG -> {
                     if (parser.name == "node") {
                         if (currentAmenity.isNotEmpty()) {
-                            parsedFoodPoints.add(FoodPoint(
-                                name = if (currentName.isNotEmpty()) currentName else "Заведение",
-                                lat = currentNodeLat,
-                                lon = currentNodeLon,
-                                type = currentAmenity
-                            ))
+                            parsedFoodPoints.add(
+                                FoodPoint(
+                                    name = if (currentName.isNotEmpty()) currentName else "Заведение",
+                                    lat = currentNodeLat,
+                                    lon = currentNodeLon,
+                                    type = currentAmenity
+                                )
+                            )
                         }
                     } else if (parser.name == "way") {
                         val pts = currentWayNodes.mapNotNull { nodes[it] }
@@ -114,12 +121,14 @@ class MapGridGenerator(private val context: Context) {
                             if (currentAmenity.isNotEmpty()) {
                                 val avgLat = pts.map { it.lat }.average()
                                 val avgLon = pts.map { it.lon }.average()
-                                parsedFoodPoints.add(FoodPoint(
-                                    name = if (currentName.isNotEmpty()) currentName else "Заведение",
-                                    lat = avgLat,
-                                    lon = avgLon,
-                                    type = currentAmenity
-                                ))
+                                parsedFoodPoints.add(
+                                    FoodPoint(
+                                        name = if (currentName.isNotEmpty()) currentName else "Заведение",
+                                        lat = avgLat,
+                                        lon = avgLon,
+                                        type = currentAmenity
+                                    )
+                                )
                             }
                         }
                     }
@@ -133,7 +142,8 @@ class MapGridGenerator(private val context: Context) {
         val avgLat = (Config.MAX_LAT + Config.MIN_LAT) / 2
 
         val gridHeight = (latDiff * Config.METERS_PER_LAT_DEGREE / Config.CELL_SIZE_METERS).toInt()
-        val gridWidth = (lonDiff * Config.getMetersPerLonDegree(avgLat) / Config.CELL_SIZE_METERS).toInt()
+        val gridWidth =
+            (lonDiff * Config.getMetersPerLonDegree(avgLat) / Config.CELL_SIZE_METERS).toInt()
 
         val walkable = Array(gridWidth) { BooleanArray(gridHeight) { false } }
 
@@ -146,10 +156,14 @@ class MapGridGenerator(private val context: Context) {
             val minLon = points.minOf { it.lon }
             val maxLon = points.maxOf { it.lon }
 
-            val minI = (((minLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt().coerceIn(0, gridHeight - 1)
-            val maxI = (((maxLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt().coerceIn(0, gridHeight - 1)
-            val minJ = (((minLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
-            val maxJ = (((maxLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
+            val minI = (((minLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt()
+                .coerceIn(0, gridHeight - 1)
+            val maxI = (((maxLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt()
+                .coerceIn(0, gridHeight - 1)
+            val minJ = (((minLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt()
+                .coerceIn(0, gridWidth - 1)
+            val maxJ = (((maxLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt()
+                .coerceIn(0, gridWidth - 1)
 
             for (i in minI..maxI) {
                 for (j in minJ..maxJ) {
@@ -169,10 +183,14 @@ class MapGridGenerator(private val context: Context) {
             val minLon = points.minOf { it.lon }
             val maxLon = points.maxOf { it.lon }
 
-            val minI = (((minLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt().coerceIn(0, gridHeight - 1)
-            val maxI = (((maxLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt().coerceIn(0, gridHeight - 1)
-            val minJ = (((minLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
-            val maxJ = (((maxLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt().coerceIn(0, gridWidth - 1)
+            val minI = (((minLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt()
+                .coerceIn(0, gridHeight - 1)
+            val maxI = (((maxLat - Config.MIN_LAT) / latDiff) * gridHeight).toInt()
+                .coerceIn(0, gridHeight - 1)
+            val minJ = (((minLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt()
+                .coerceIn(0, gridWidth - 1)
+            val maxJ = (((maxLon - Config.MIN_LON) / lonDiff) * gridWidth).toInt()
+                .coerceIn(0, gridWidth - 1)
 
             for (i in minI..maxI) {
                 for (j in minJ..maxJ) {
@@ -197,18 +215,23 @@ class MapGridGenerator(private val context: Context) {
         for (k in 0 until line.size - 1) {
             val p1 = line[k]
             val p2 = line[k + 1]
-            if (distanceToSegment(lat, lon,
+            if (distanceToSegment(
+                    lat, lon,
                     p1.lat, p1.lon,
-                    p2.lat, p2.lon) < threshold) {
+                    p2.lat, p2.lon
+                ) < threshold
+            ) {
                 return true
             }
         }
         return false
     }
 
-    private fun distanceToSegment(x: Double, y: Double,
-                                  x1: Double, y1: Double,
-                                  x2: Double, y2: Double): Double {
+    private fun distanceToSegment(
+        x: Double, y: Double,
+        x1: Double, y1: Double,
+        x2: Double, y2: Double
+    ): Double {
         val dx = x2 - x1
         val dy = y2 - y1
         if (dx == 0.0 && dy == 0.0) return Math.hypot(x - x1, y - y1)
@@ -262,6 +285,7 @@ class MapGridGenerator(private val context: Context) {
 
             val file = File(context.filesDir, fileName)
             file.writeText(json.toString())
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+        }
     }
 }

@@ -37,7 +37,8 @@ import com.example.myapplication.algorithms.DecisionNode
 
 @Composable
 fun DecisionTreeScreen() {
-    val defaultCsv = """location,budget,time_available,food_type,queue_tolerance,weather,recommended_place
+    val defaultCsv =
+        """location,budget,time_available,food_type,queue_tolerance,weather,recommended_place
 main_building,low,medium,full_meal,medium,good,Main_Cafeteria
 main_building,low,short,snack,low,good,Yarche
 main_building,medium,short,coffee,low,good,Bus_Stop_Coffee
@@ -99,7 +100,11 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
             .verticalScroll(scrollState),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("🌲 Дерево решений: Где обедаем?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(
+            "🌲 Дерево решений: Где обедаем?",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -122,7 +127,10 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                     )
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
                     Button(onClick = { buildTree() }, modifier = Modifier.padding(top = 8.dp)) {
                         Text("Построить")
                     }
@@ -137,7 +145,7 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
 
         if (tree != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
@@ -156,12 +164,15 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                                 onCheckedChange = { showVisualTree = it },
                                 modifier = Modifier.scale(0.7f)
                             )
-                            Text(if (showVisualTree) "График" else "Текст", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                if (showVisualTree) "График" else "Текст",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -172,7 +183,9 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                         if (showVisualTree) {
                             VisualTreeCanvas(tree!!.root)
                         } else {
-                            LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                            LazyColumn(modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp)) {
                                 item {
                                     Text(
                                         text = tree!!.printTree(),
@@ -187,7 +200,7 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                     }
                     if (showVisualTree) {
                         Text(
-                            "💡 Используй два пальца для зума и перемещения", 
+                            "💡 Используй два пальца для зума и перемещения",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.Gray,
                             modifier = Modifier.padding(top = 4.dp)
@@ -204,17 +217,37 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("🎯 Параметры для выбора:", style = MaterialTheme.typography.titleMedium)
-                    
-                    ParameterSelector("Местоположение", location, listOf("main_building", "second_building", "campus_center")) { location = it }
-                    ParameterSelector("Бюджет", budget, listOf("low", "medium", "high")) { budget = it }
-                    ParameterSelector("Времени есть", timeAvailable, listOf("very_short", "short", "medium")) { timeAvailable = it }
-                    ParameterSelector("Тип еды", foodType, listOf("coffee", "pancakes", "full_meal", "snack")) { foodType = it }
-                    ParameterSelector("Очередь", queueTolerance, listOf("low", "medium", "high")) { queueTolerance = it }
+
+                    ParameterSelector(
+                        "Местоположение",
+                        location,
+                        listOf("main_building", "second_building", "campus_center")
+                    ) { location = it }
+                    ParameterSelector("Бюджет", budget, listOf("low", "medium", "high")) {
+                        budget = it
+                    }
+                    ParameterSelector(
+                        "Времени есть",
+                        timeAvailable,
+                        listOf("very_short", "short", "medium")
+                    ) { timeAvailable = it }
+                    ParameterSelector(
+                        "Тип еды",
+                        foodType,
+                        listOf("coffee", "pancakes", "full_meal", "snack")
+                    ) { foodType = it }
+                    ParameterSelector(
+                        "Очередь",
+                        queueTolerance,
+                        listOf("low", "medium", "high")
+                    ) { queueTolerance = it }
                     ParameterSelector("Погода", weather, listOf("good", "bad")) { weather = it }
 
                     Button(
-                        onClick = { predict() }, 
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                        onClick = { predict() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text("Где мне поесть?")
@@ -224,7 +257,7 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
 
             if (predictionResult != null) {
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -233,20 +266,20 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("🎉 РЕЗУЛЬТАТ:", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            predictionResult!!.result, 
+                            predictionResult!!.result,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
                         Divider(color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Text("📍 Путь по дереву:", style = MaterialTheme.typography.titleSmall)
                         predictionResult!!.path.forEach { step ->
                             Text(
-                                step, 
+                                step,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
@@ -255,7 +288,7 @@ campus_center,medium,short,pancakes,medium,good,Siberian_Pancakes"""
                 }
             }
         }
-        
+
         Spacer(modifier = Modifier.height(32.dp))
     }
 }
@@ -283,14 +316,15 @@ fun VisualTreeCanvas(root: DecisionNode?) {
             .clipToBounds()
             .transformable(state = state)
     ) {
-        Canvas(modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offset.x,
-                translationY = offset.y
-            )
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y
+                )
         ) {
             val treeWidth = calculateTreeWidth(root) * (nodeWidth + horizontalSpacing)
             drawNodeRecursive(
@@ -349,7 +383,10 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNodeRecursive(
     )
     drawText(
         textLayoutResult = textLayoutResult,
-        topLeft = Offset(x - textLayoutResult.size.width / 2, y + nodeHeight / 2 - textLayoutResult.size.height / 2)
+        topLeft = Offset(
+            x - textLayoutResult.size.width / 2,
+            y + nodeHeight / 2 - textLayoutResult.size.height / 2
+        )
     )
 
     if (node.children.isNotEmpty()) {
@@ -373,17 +410,35 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawNodeRecursive(
             )
             drawText(
                 textLayoutResult = valueLayout,
-                topLeft = Offset((x + childX) / 2 - valueLayout.size.width / 2, (y + nodeHeight + childY) / 2 - valueLayout.size.height / 2)
+                topLeft = Offset(
+                    (x + childX) / 2 - valueLayout.size.width / 2,
+                    (y + nodeHeight + childY) / 2 - valueLayout.size.height / 2
+                )
             )
 
-            drawNodeRecursive(child, childX, childY, childWidth, textMeasurer, nodeWidth, nodeHeight, verticalSpacing, horizontalSpacing)
+            drawNodeRecursive(
+                child,
+                childX,
+                childY,
+                childWidth,
+                textMeasurer,
+                nodeWidth,
+                nodeHeight,
+                verticalSpacing,
+                horizontalSpacing
+            )
             currentX += childWidth
         }
     }
 }
 
 @Composable
-fun ParameterSelector(label: String, selected: String, options: List<String>, onSelected: (String) -> Unit) {
+fun ParameterSelector(
+    label: String,
+    selected: String,
+    options: List<String>,
+    onSelected: (String) -> Unit
+) {
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Gray)
         Row(
@@ -394,7 +449,12 @@ fun ParameterSelector(label: String, selected: String, options: List<String>, on
                 FilterChip(
                     selected = selected == option,
                     onClick = { onSelected(option) },
-                    label = { Text(option, fontSize = MaterialTheme.typography.bodySmall.fontSize) },
+                    label = {
+                        Text(
+                            option,
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize
+                        )
+                    },
                     modifier = Modifier.padding(end = 4.dp)
                 )
             }

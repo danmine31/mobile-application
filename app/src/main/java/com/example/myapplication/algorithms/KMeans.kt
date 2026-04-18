@@ -9,8 +9,8 @@ data class KMeansResult(val centroids: List<Point>, val labels: List<Int>)
 enum class DistanceMetric { EUCLIDEAN, MANHATTAN }
 
 fun kMeans(
-    points: List<Point>, 
-    k: Int, 
+    points: List<Point>,
+    k: Int,
     maxIter: Int = 100,
     metric: DistanceMetric = DistanceMetric.EUCLIDEAN
 ): KMeansResult {
@@ -21,8 +21,8 @@ fun kMeans(
 
     repeat(maxIter) {
         val newLabels = points.map { point ->
-            centroids.indices.minByOrNull { i -> 
-                distance(point, centroids[i], metric) 
+            centroids.indices.minByOrNull { i ->
+                distance(point, centroids[i], metric)
             } ?: 0
         }
 
@@ -49,7 +49,13 @@ fun kMeans(
 
 private fun distance(p1: Point, p2: Point, metric: DistanceMetric): Double {
     return when (metric) {
-        DistanceMetric.EUCLIDEAN -> Math.sqrt(Math.pow(p1.x - p2.x, 2.0) + Math.pow(p1.y - p2.y, 2.0))
+        DistanceMetric.EUCLIDEAN -> Math.sqrt(
+            Math.pow(p1.x - p2.x, 2.0) + Math.pow(
+                p1.y - p2.y,
+                2.0
+            )
+        )
+
         DistanceMetric.MANHATTAN -> Math.abs(p1.x - p2.x) + Math.abs(p1.y - p2.y)
     }
 }

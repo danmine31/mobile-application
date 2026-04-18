@@ -71,7 +71,10 @@ class MainActivity : ComponentActivity() {
                     if (isSplash) {
                         SplashScreen()
                     } else if (gridMap == null) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
                     } else {
@@ -113,7 +116,7 @@ fun SplashScreen() {
                 shape = CircleShape,
                 color = TSU_LightBlue.copy(alpha = 0.05f)
             ) {}
-            
+
             val painter = painterResource(id = R.drawable.tsu_logo_basic_sign)
             Image(
                 painter = painter,
@@ -122,9 +125,9 @@ fun SplashScreen() {
                 contentScale = ContentScale.Fit
             )
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         Text(
             text = "TSU.AlgoMap",
             style = MaterialTheme.typography.headlineSmall.copy(
@@ -133,9 +136,9 @@ fun SplashScreen() {
                 letterSpacing = 2.sp
             )
         )
-        
+
         Spacer(modifier = Modifier.height(8.dp))
-        
+
         Text(
             text = "Томский Государственный Университет",
             style = MaterialTheme.typography.bodyMedium.copy(
@@ -149,7 +152,7 @@ private fun loadGridFromFile(context: Context, fileName: String): GridMap? {
     return try {
         val file = File(context.filesDir, fileName)
         if (!file.exists()) return null
-        
+
         val jsonString = file.readText()
         parseGridJson(jsonString)
     } catch (e: Exception) {
@@ -173,26 +176,28 @@ private fun parseGridJson(jsonString: String): GridMap {
     val h = json.getInt("height")
 
     val dataString = json.getString("data_string")
-    
+
     val walkable = Array(w) { j ->
         BooleanArray(h) { i ->
             dataString[i * w + j] == '1'
         }
     }
-    
+
     val foodPoints = mutableListOf<com.example.myapplication.data.FoodPoint>()
     if (json.has("food_points")) {
         val foodArray = json.getJSONArray("food_points")
         for (i in 0 until foodArray.length()) {
             val f = foodArray.getJSONObject(i)
-            foodPoints.add(com.example.myapplication.data.FoodPoint(
-                name = f.getString("name"),
-                lat = f.getDouble("lat"),
-                lon = f.getDouble("lon"),
-                type = f.getString("type")
-            ))
+            foodPoints.add(
+                com.example.myapplication.data.FoodPoint(
+                    name = f.getString("name"),
+                    lat = f.getDouble("lat"),
+                    lon = f.getDouble("lon"),
+                    type = f.getString("type")
+                )
+            )
         }
     }
-    
+
     return GridMap(w, h, walkable, foodPoints)
 }

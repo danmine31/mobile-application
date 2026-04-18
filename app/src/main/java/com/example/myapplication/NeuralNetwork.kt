@@ -25,7 +25,7 @@ class NeuralNetwork(private val context: Context) {
 
     suspend fun loadWeights() {
         if (isLoaded) return
-        
+
         withContext(Dispatchers.IO) {
             w1 = loadMatrix(context, R.raw.w1)
             b1 = loadVector(context, R.raw.b1)
@@ -38,14 +38,16 @@ class NeuralNetwork(private val context: Context) {
     }
 
     private fun loadVector(context: Context, resourceId: Int): List<Double> {
-        val reader = BufferedReader(InputStreamReader(context.resources.openRawResource(resourceId)))
+        val reader =
+            BufferedReader(InputStreamReader(context.resources.openRawResource(resourceId)))
         val line = reader.readLine()
         reader.close()
         return line?.split(",")?.mapNotNull { it.trim().toDoubleOrNull() } ?: emptyList()
     }
 
     private fun loadMatrix(context: Context, resourceId: Int): List<List<Double>> {
-        val reader = BufferedReader(InputStreamReader(context.resources.openRawResource(resourceId)))
+        val reader =
+            BufferedReader(InputStreamReader(context.resources.openRawResource(resourceId)))
         val matrix = mutableListOf<List<Double>>()
         reader.forEachLine { line ->
             val row = line.split(",").mapNotNull { it.trim().toDoubleOrNull() }

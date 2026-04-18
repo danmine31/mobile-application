@@ -14,13 +14,13 @@ private val DarkColorScheme = darkColorScheme(
     primary = TSU_LightBlue,
     secondary = TSU_DarkBlue,
 
-)
+    )
 
 private val LightColorScheme = lightColorScheme(
     primary = TSU_LightBlue,
     secondary = TSU_DarkBlue,
 
-)
+    )
 
 @Composable
 fun MyApplicationTheme(

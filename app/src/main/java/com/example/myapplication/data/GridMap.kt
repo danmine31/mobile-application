@@ -28,7 +28,7 @@ class GridMap(
         if (!walkable[x][y]) return false
 
         if (dynamicObstacles.contains(GridNode(x, y))) return false
-        
+
         return true
     }
 
@@ -58,10 +58,14 @@ class GridMap(
                 if (dx == 0 && dy == 0) continue
                 val nx = node.x + dx
                 val ny = node.y + dy
-                
+
                 if (nx in 0 until width && ny in 0 until height && isWalkableAt(nx, ny)) {
                     if (Math.abs(dx) == 1 && Math.abs(dy) == 1) {
-                        if (isWalkableAt(node.x + dx, node.y) && isWalkableAt(node.x, node.y + dy)) {
+                        if (isWalkableAt(node.x + dx, node.y) && isWalkableAt(
+                                node.x,
+                                node.y + dy
+                            )
+                        ) {
                             neighbors.add(GridNode(nx, ny))
                         }
                     } else {
@@ -74,7 +78,12 @@ class GridMap(
     }
 
     fun heuristic(a: GridNode, b: GridNode): Double {
-        return Math.sqrt(Math.pow((a.x-b.x).toDouble(), 2.0)+Math.pow((a.y-b.y).toDouble(), 2.0))
+        return Math.sqrt(
+            Math.pow((a.x - b.x).toDouble(), 2.0) + Math.pow(
+                (a.y - b.y).toDouble(),
+                2.0
+            )
+        )
     }
 
     fun costBetween(a: GridNode, b: GridNode): Double {

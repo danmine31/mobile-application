@@ -21,7 +21,7 @@ class AStar<T> {
         }
         val openSet = mutableSetOf(start)
         openQueue.add(start)
-        
+
         val closedSet = mutableSetOf<T>()
         val cameFrom = mutableMapOf<T, T>()
         val gScore = mutableMapOf(start to 0.0)
@@ -30,9 +30,9 @@ class AStar<T> {
             val current = openQueue.poll()!!
 
             if (current in closedSet) continue
-            
+
             openSet.remove(current)
-            
+
             onStep?.invoke(Step(current, openSet.toSet(), closedSet.toSet()))
 
             if (current == goal) {
@@ -44,7 +44,8 @@ class AStar<T> {
             for (neighbor in getNeighbors(current)) {
                 if (neighbor in closedSet) continue
 
-                val tentativeGScore = (gScore[current] ?: Double.MAX_VALUE) + costBetween(current, neighbor)
+                val tentativeGScore =
+                    (gScore[current] ?: Double.MAX_VALUE) + costBetween(current, neighbor)
 
                 if (tentativeGScore < (gScore[neighbor] ?: Double.MAX_VALUE)) {
                     cameFrom[neighbor] = current

@@ -55,7 +55,11 @@ class DecisionTree {
         return node
     }
 
-    private fun buildTree(data: List<Map<String, String>>, features: List<String>, target: String): DecisionNode {
+    private fun buildTree(
+        data: List<Map<String, String>>,
+        features: List<String>,
+        target: String
+    ): DecisionNode {
         val targetValues = data.map { it[target] }.distinct()
         val sampleCount = data.size
 
@@ -74,7 +78,8 @@ class DecisionTree {
         for (value in featureValues) {
             val subset = data.filter { it[bestFeature] == value }
             if (subset.isEmpty()) {
-                val majority = data.groupingBy { it[target] }.eachCount().maxByOrNull { it.value }?.key
+                val majority =
+                    data.groupingBy { it[target] }.eachCount().maxByOrNull { it.value }?.key
                 node.children.add(DecisionNode(value = value, result = majority, sampleCount = 0))
             } else {
                 val remainingFeatures = features.filter { it != bestFeature }
@@ -86,7 +91,11 @@ class DecisionTree {
         return node
     }
 
-    private fun selectBestFeature(data: List<Map<String, String>>, features: List<String>, target: String): String {
+    private fun selectBestFeature(
+        data: List<Map<String, String>>,
+        features: List<String>,
+        target: String
+    ): String {
         val baseEntropy = calculateEntropy(data.map { it[target] }.filterNotNull())
         var bestGain = -1.0
         var bestFeature = features.first()
@@ -120,7 +129,11 @@ class DecisionTree {
         return entropy
     }
 
-    private fun predict(node: DecisionNode?, instance: Map<String, String>, path: MutableList<String>): String? {
+    private fun predict(
+        node: DecisionNode?,
+        instance: Map<String, String>,
+        path: MutableList<String>
+    ): String? {
         if (node == null) return null
         if (node.result != null) {
             path.add("-> Рекомендация: ${node.result}")
@@ -129,12 +142,13 @@ class DecisionTree {
 
         val featureValue = instance[node.featureName]
         path.add("Проверка ${node.featureName} = $featureValue")
-        
+
         val child = node.children.find { it.value == featureValue }
         return if (child != null) {
             predict(child, instance, path)
         } else {
-            val fallback = node.children.maxByOrNull { it.sampleCount } ?: node.children.firstOrNull()
+            val fallback =
+                node.children.maxByOrNull { it.sampleCount } ?: node.children.firstOrNull()
             if (fallback != null) {
                 path.add("(Значение не найдено в обучении, пойдём по наиболее вероятному пути: ${fallback.value})")
                 predict(fallback, instance, path)
@@ -155,10 +169,10 @@ class DecisionTree {
             builder.append("|__ 🏁 РЕЗУЛЬТАТИК: ${node.result}\n")
             return
         }
-        
+
         builder.append("  ".repeat(indent))
         builder.append("❓ ${node.featureName}?\n")
-        
+
         for (child in node.children) {
             builder.append("  ".repeat(indent + 1))
             builder.append("|-- ${child.value}\n")

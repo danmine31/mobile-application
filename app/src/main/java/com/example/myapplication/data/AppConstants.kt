@@ -9,7 +9,7 @@ object AppConstants {
     const val CELL_SIZE_METERS = 3.0
 
     const val METERS_PER_LAT_DEGREE = 111132.0
-    
+
     fun getMetersPerLonDegree(lat: Double): Double {
         return 111320.0 * Math.cos(Math.toRadians(lat))
     }
