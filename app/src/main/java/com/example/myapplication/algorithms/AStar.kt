@@ -15,22 +15,30 @@ class AStar<T> {
         costBetween: (T, T) -> Double,
         onStep: (suspend (Step<T>) -> Unit)? = null
     ): Result<T>? {
+        val fScore = mutableMapOf(start to heuristic(start, goal))
+        val openQueue = PriorityQueue<T> { a, b ->
+            (fScore[a] ?: Double.MAX_VALUE).compareTo(fScore[b] ?: Double.MAX_VALUE)
+        }
         val openSet = mutableSetOf(start)
+        openQueue.add(start)
+        
         val closedSet = mutableSetOf<T>()
         val cameFrom = mutableMapOf<T, T>()
         val gScore = mutableMapOf(start to 0.0)
-        val fScore = mutableMapOf(start to heuristic(start, goal))
 
-        while (openSet.isNotEmpty()) {
-            val current = openSet.minByOrNull { fScore[it] ?: Double.MAX_VALUE } ?: break
+        while (openQueue.isNotEmpty()) {
+            val current = openQueue.poll()!!
 
+            if (current in closedSet) continue
+            
+            openSet.remove(current)
+            
             onStep?.invoke(Step(current, openSet.toSet(), closedSet.toSet()))
 
             if (current == goal) {
                 return Result(reconstructPath(cameFrom, current))
             }
 
-            openSet.remove(current)
             closedSet.add(current)
 
             for (neighbor in getNeighbors(current)) {
@@ -41,8 +49,11 @@ class AStar<T> {
                 if (tentativeGScore < (gScore[neighbor] ?: Double.MAX_VALUE)) {
                     cameFrom[neighbor] = current
                     gScore[neighbor] = tentativeGScore
-                    fScore[neighbor] = tentativeGScore + heuristic(neighbor, goal)
+                    val newFScore = tentativeGScore + heuristic(neighbor, goal)
+                    fScore[neighbor] = newFScore
+
                     openSet.add(neighbor)
+                    openQueue.add(neighbor)
                 }
             }
         }

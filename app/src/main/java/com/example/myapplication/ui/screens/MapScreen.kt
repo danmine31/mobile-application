@@ -22,10 +22,10 @@ import kotlinx.coroutines.Job
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
 import org.osmdroid.views.CustomZoomButtonsController
 import android.view.MotionEvent
@@ -35,13 +35,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import com.example.myapplication.algorithms.AStar
+import com.example.myapplication.algorithms.AntColony
 import com.example.myapplication.algorithms.kMeans
 import com.example.myapplication.algorithms.DistanceMetric
 import com.example.myapplication.algorithms.Point as AlgoPoint
 import com.example.myapplication.data.AppConstants
 import com.example.myapplication.data.GridMap
 import com.example.myapplication.data.GridNode
+import com.example.myapplication.data.PointOfInterest
 import com.example.myapplication.ui.theme.TSU_LIGHT_BLUE
 import com.example.myapplication.ui.theme.TSU_LightBlue
 import com.example.myapplication.ui.theme.TSU_DarkBlue
@@ -55,6 +58,7 @@ import android.widget.Toast
 import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -64,6 +68,7 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import com.example.myapplication.data.FoodPoint
 import com.example.myapplication.RatingScreen
+import com.example.myapplication.ui.screens.AntScreen
 
 fun smoothPath(path: List<GridNode>, gridMap: GridMap): List<GridNode> {
     if (path.size <= 2) return path
@@ -173,7 +178,7 @@ fun MapScreen(gridMap: GridMap) {
     var aStarTargetMode by remember { mutableStateOf<AStarTarget>(AStarTarget.START) }
 
     var currentSection by remember { mutableStateOf(AppSection.NAVIGATION) }
-    var selectedEstablishmentForRating by remember { mutableStateOf<FoodPoint?>(null) }
+    var selectedEstablishmentForRating: com.example.myapplication.data.FoodPoint? by remember { mutableStateOf<com.example.myapplication.data.FoodPoint?>(null) }
 
     var isGridEnabled by remember { mutableStateOf(false) }
     var showOnlyWalkable by remember { mutableStateOf(true) }
@@ -210,6 +215,10 @@ fun MapScreen(gridMap: GridMap) {
     var geneticRouteDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     var geneticMarkers by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     var isCalculatingGenetic by remember { mutableStateOf(false) }
+
+    var antsRoute by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var antPoints by remember { mutableStateOf<List<PointOfInterest>>(emptyList()) }
+    var antPheromones by remember { mutableStateOf<Array<DoubleArray>>(emptyArray<DoubleArray>()) }
 
     val clusterColors = listOf(
         ComposeColor(0xFFE57373), ComposeColor(0xFF81C784), ComposeColor(0xFF64B5F6),
@@ -297,45 +306,35 @@ fun MapScreen(gridMap: GridMap) {
     }
 
     fun calculatePath() {
-        if (startPoint != null && endPoint != null) {
+        if (startPoint == null || endPoint == null) return
 
+        val startNode = geoPointToGridCell(startPoint!!, gridMap.width, gridMap.height)
+        val endNode = geoPointToGridCell(endPoint!!, gridMap.width, gridMap.height)
+
+        
+        if (!gridMap.isWalkableAt(startNode.x, startNode.y) || !gridMap.isWalkableAt(endNode.x, endNode.y)) {
+            Toast.makeText(context, "Путь не найден! Точка заблокирована.", Toast.LENGTH_LONG).show()
             routeToDraw = emptyList()
-            currentAStarStep = null
+            return
+        }
 
-            val startNode = geoPointToGridCell(startPoint!!, gridMap.width, gridMap.height)
-            val goalNode = geoPointToGridCell(endPoint!!, gridMap.width, gridMap.height)
-            
-            val snappedStart = gridMap.getNearestWalkable(startNode.x, startNode.y)
-            val snappedGoal = gridMap.getNearestWalkable(goalNode.x, goalNode.y)
-            
-            if (snappedStart == null || snappedGoal == null) {
-                routeToDraw = emptyList()
-                Toast.makeText(context, "Нельзя построить путь (точка в препятствии)", Toast.LENGTH_SHORT).show()
-                return
-            }
+        isAnimatingAStar = true
+        scope.launch(Dispatchers.Default) {
+            val result = aStar.findPath(
+                start = startNode,
+                goal = endNode,
+                getNeighbors = { gridMap.getNeighbors(it) },
+                heuristic = { a, b -> gridMap.heuristic(a, b) },
+                costBetween = { a, b -> gridMap.costBetween(a, b) },
+                onStep = if (shouldAnimateAStar) { step ->
+                    withContext(Dispatchers.Main) {
+                        currentAStarStep = step
+                    }
+                    delay(animationSpeed.toLong())
+                } else null
+            )
 
-            scope.launch {
-                isAnimatingAStar = true
-                currentAStarStep = null
-                
-                val result = withContext(Dispatchers.Default) {
-                    aStar.findPath(
-                        start = snappedStart,
-                        goal = snappedGoal,
-                        getNeighbors = { gridMap.getNeighbors(it) },
-                        heuristic = { a, b -> gridMap.heuristic(a, b) },
-                        costBetween = { a, b -> gridMap.costBetween(a, b) },
-                        onStep = { step ->
-                            if (shouldAnimateAStar) {
-                                withContext(Dispatchers.Main) {
-                                    currentAStarStep = step
-                                }
-                                delay(animationSpeed.toLong())
-                            }
-                        }
-                    )
-                }
-
+            withContext(Dispatchers.Main) {
                 if (result != null) {
                     val smoothedPath = smoothPath(result.path, gridMap)
                     routeToDraw = smoothedPath.map { gridCellToGeoPoint(it, gridMap.width, gridMap.height) }
@@ -474,7 +473,16 @@ fun MapScreen(gridMap: GridMap) {
             Box(modifier = Modifier.fillMaxSize().background(ComposeColor.White).padding(bottom = 80.dp)) {
                 DecisionTreeScreen()
             }
+        } else if (currentSection == AppSection.NEURAL) {
+            Box(modifier = Modifier.fillMaxSize().background(ComposeColor.White).padding(bottom = 80.dp)) {
+                RatingScreen(
+                    establishmentName = "Выбранное заведение", 
+                    establishmentPoint = GeoPoint(56.4583, 84.9472), 
+                    onBack = { currentSection = AppSection.NAVIGATION }
+                )
+            }
         } else {
+            
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
@@ -496,6 +504,7 @@ fun MapScreen(gridMap: GridMap) {
                         myLocationOverlay = locationOverlay
                     }
                 }, update = { mapView ->
+                    
 
                     gridOverlay.gridEnabled = isGridEnabled
                     gridOverlay.showOnlyWalkable = showOnlyWalkable
@@ -591,6 +600,22 @@ fun MapScreen(gridMap: GridMap) {
                             polyline.infoWindow = null
                             mapView.overlays.add(polyline)
                         }
+
+                        if (antsRoute.isNotEmpty()) {
+                            val polyline = Polyline(mapView)
+                            polyline.setPoints(antsRoute)
+                            polyline.outlinePaint.color = android.graphics.Color.MAGENTA
+                            polyline.outlinePaint.strokeWidth = 8f
+                            mapView.overlays.add(polyline)
+
+                            antsRoute.forEach { gp ->
+                                val marker = Marker(mapView)
+                                marker.position = gp
+                                marker.icon = createColoredDotIcon(context, 40, ComposeColor.Magenta)
+                                marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                mapView.overlays.add(marker)
+                            }
+                        }
                     }
 
                     val eventsReceiver = object : MapEventsReceiver {
@@ -603,9 +628,18 @@ fun MapScreen(gridMap: GridMap) {
                                 } else if (currentSection == AppSection.CLUSTERING && useUserPoints) {
                                     userPoints = userPoints + gp
                                     return true
-                                }
-                                else if (currentSection == AppSection.GENETIC) {
+                                } else if (currentSection == AppSection.GENETIC) {
                                     geneticStartPoint = gp
+                                    return true
+                                } else if (currentSection == AppSection.ANTS) {
+                                    val newPoint = PointOfInterest(
+                                        id = "user_${System.currentTimeMillis()}",
+                                        name = "Точка маршрута",
+                                        x = gp.longitude,
+                                        y = gp.latitude,
+                                        isCoworking = false
+                                    )
+                                    antPoints = antPoints + newPoint
                                     return true
                                 }
                             }
@@ -615,6 +649,58 @@ fun MapScreen(gridMap: GridMap) {
                     }
 
                     mapView.overlays.add(MapEventsOverlay(eventsReceiver))
+
+                    if (currentSection == AppSection.ANTS) {
+                        
+                        if (antPheromones.isNotEmpty() && antPoints.isNotEmpty()) {
+                            val startGP = myLocationOverlay?.myLocation ?: GeoPoint(56.4583, 84.9472)
+                            val startPoint_ = PointOfInterest("start", "Старт", startGP.longitude, startGP.latitude)
+                            val pointsForPheromones = (listOf(startPoint_) + antPoints).distinctBy { it.id }
+
+                            if (pointsForPheromones.size == antPheromones.size) {
+                                val maxPheromone = antPheromones.maxOf { it.maxOrNull() ?: 0.0 }.coerceAtLeast(1.0)
+                                for (i in antPheromones.indices) {
+                                    for (j in i + 1 until antPheromones.size) {
+                                        val p = antPheromones[i][j]
+                                        if (p > 0.1) {
+                                            val line = Polyline(mapView)
+                                            line.setPoints(listOf(
+                                                GeoPoint(pointsForPheromones[i].y, pointsForPheromones[i].x),
+                                                GeoPoint(pointsForPheromones[j].y, pointsForPheromones[j].x)
+                                            ))
+                                            
+                                            val intensity = (p / maxPheromone).coerceIn(0.0, 1.0)
+                                            val alpha = (intensity * 180).toInt().coerceIn(30, 200)
+                                            val color = android.graphics.Color.argb(alpha, 255, (160 * (1 - intensity)).toInt(), 0)
+                                            
+                                            line.outlinePaint.color = color
+                                            line.outlinePaint.strokeWidth = (intensity * 10).toFloat().coerceIn(2f, 12f)
+                                            mapView.overlays.add(line)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        
+                        antPoints.forEach { point ->
+                            val marker = Marker(mapView)
+                            marker.position = GeoPoint(point.y, point.x)
+                            marker.icon = createColoredDotIcon(context, 40, TSU_DarkBlue)
+                            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            marker.title = point.name
+                            mapView.overlays.add(marker)
+                        }
+
+                        
+                        if (antsRoute.isNotEmpty()) {
+                            val polyline = Polyline(mapView)
+                            polyline.setPoints(antsRoute)
+                            polyline.outlinePaint.color = android.graphics.Color.CYAN
+                            polyline.outlinePaint.strokeWidth = 10f
+                            mapView.overlays.add(polyline)
+                        }
+                    }
 
                     if (currentSection == AppSection.CLUSTERING) {
                         if (useUserPoints) {
@@ -729,63 +815,90 @@ fun MapScreen(gridMap: GridMap) {
             }
         }
 
+        val logoAlignment = if (currentSection == AppSection.TREE || currentSection == AppSection.NEURAL || currentSection == AppSection.GENETIC) {
+            Alignment.BottomEnd
+        } else {
+            Alignment.TopStart
+        }
+        
+        val logoPadding = if (currentSection == AppSection.TREE || currentSection == AppSection.NEURAL || currentSection == AppSection.GENETIC) {
+            Modifier.padding(bottom = 100.dp, end = 16.dp)
+        } else {
+            Modifier.padding(top = 16.dp, start = 16.dp)
+        }
+
         Box(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp)
-                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .align(logoAlignment)
+                .then(logoPadding)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             Image(
                 painter = painterResource(id = R.drawable.tsu_logo_basic_sign),
                 contentDescription = "TSU Logo",
-                modifier = Modifier.height(64.dp)
+                modifier = Modifier.height(64.dp),
+                contentScale = ContentScale.Fit
             )
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .padding(top = 48.dp)
-                .background(ComposeColor.White.copy(alpha = 0.8f),
-                    shape = MaterialTheme.shapes.medium)
-                .padding(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = isGridEnabled, onCheckedChange = { isGridEnabled = it })
-                Text("Сетка", style = MaterialTheme.typography.bodySmall)
-            }
-            if (isGridEnabled) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = showOnlyWalkable, onCheckedChange = { showOnlyWalkable = it })
-                    Text("Только дороги", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            if (currentSection == AppSection.NAVIGATION) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = shouldAnimateAStar, onCheckedChange = { shouldAnimateAStar = it })
-                    Text("Анимация поиска", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            IconButton(
-                onClick = {
-                    myLocationOverlay?.let { overlay ->
-                        val myLocation = overlay.myLocation
-                        if (myLocation != null) {
-                        } else {
-                            Toast.makeText(context, "Определяем местоположение...", Toast.LENGTH_SHORT).show()
-                        }
-                        overlay.enableFollowLocation()
-                    }
-                },
-                modifier = Modifier.size(40.dp).padding(4.dp)
+        if (currentSection != AppSection.TREE && currentSection != AppSection.NEURAL && currentSection != AppSection.GENETIC) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .padding(top = 48.dp),
+                horizontalAlignment = Alignment.End
             ) {
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = "My Location",
-                    tint = TSU_LightBlue
-                )
+                Column(
+                    modifier = Modifier
+                        .background(ComposeColor.White.copy(alpha = 0.8f),
+                            shape = MaterialTheme.shapes.medium)
+                        .padding(8.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isGridEnabled, onCheckedChange = { isGridEnabled = it })
+                        Text("Сетка", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (isGridEnabled) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showOnlyWalkable, onCheckedChange = { showOnlyWalkable = it })
+                            Text("Только дороги", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (currentSection == AppSection.NAVIGATION) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = shouldAnimateAStar, onCheckedChange = { shouldAnimateAStar = it })
+                            Text("Анимация поиска", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    onClick = {
+                        myLocationOverlay?.let { overlay ->
+                            val myLocation = overlay.myLocation
+                            if (myLocation == null) {
+                                Toast.makeText(context, "Определяем местоположение...", Toast.LENGTH_SHORT).show()
+                            }
+                            overlay.enableFollowLocation()
+                        }
+                    },
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = ComposeColor.White.copy(alpha = 0.9f),
+                    shadowElevation = 4.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = "My Location",
+                            tint = TSU_LightBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -915,6 +1028,32 @@ fun MapScreen(gridMap: GridMap) {
                     } else {
                         Text("ПОСТРОИТЬ МАРШРУТ", fontWeight = FontWeight.Bold)
                     }
+                }
+            }
+        } else if (currentSection == AppSection.ANTS) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 100.dp)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = ComposeColor.White.copy(alpha = 0.95f)),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    AntScreen(
+                          onRouteCalculated = { route, pheromones ->
+                              antsRoute = route.map { GeoPoint(it.y, it.x) }
+                              antPheromones = pheromones
+                          },
+                          externalPoints = antPoints,
+                          onPointsUpdated = { antPoints = it },
+                          startGeoPoint = myLocationOverlay?.myLocation
+                      )
                 }
             }
         } else if (currentSection == AppSection.CLUSTERING) {
@@ -1079,10 +1218,11 @@ fun MapScreen(gridMap: GridMap) {
             }
         }
     }
-    if (selectedEstablishmentForRating != null) {
+    val ratingEstablishment = selectedEstablishmentForRating
+    if (ratingEstablishment != null) {
         RatingScreen(
-            establishmentName = selectedEstablishmentForRating!!.name,
-            establishmentPoint = GeoPoint(selectedEstablishmentForRating!!.lat, selectedEstablishmentForRating!!.lon),
+            establishmentName = ratingEstablishment.name,
+            establishmentPoint = GeoPoint(ratingEstablishment.lat, ratingEstablishment.lon),
             onBack = { selectedEstablishmentForRating = null }
         )
     }
