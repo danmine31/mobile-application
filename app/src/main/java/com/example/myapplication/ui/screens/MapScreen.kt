@@ -62,6 +62,8 @@ import android.graphics.drawable.BitmapDrawable
 import kotlinx.coroutines.delay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
+import com.example.myapplication.data.FoodPoint
+import com.example.myapplication.RatingScreen
 
 fun smoothPath(path: List<GridNode>, gridMap: GridMap): List<GridNode> {
     if (path.size <= 2) return path
@@ -171,6 +173,7 @@ fun MapScreen(gridMap: GridMap) {
     var aStarTargetMode by remember { mutableStateOf<AStarTarget>(AStarTarget.START) }
 
     var currentSection by remember { mutableStateOf(AppSection.NAVIGATION) }
+    var selectedEstablishmentForRating by remember { mutableStateOf<FoodPoint?>(null) }
 
     var isGridEnabled by remember { mutableStateOf(false) }
     var showOnlyWalkable by remember { mutableStateOf(true) }
@@ -201,6 +204,12 @@ fun MapScreen(gridMap: GridMap) {
     var foodPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     var userPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     var useUserPoints by remember { mutableStateOf(false) }
+    val availableDishes = listOf("Кофе", "Блины", "Полноценный обед", "Снеки")
+    var selectedDishes by remember { mutableStateOf(setOf<String>()) }
+    var geneticStartPoint by remember { mutableStateOf<GeoPoint?>(null) }
+    var geneticRouteDraw by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var geneticMarkers by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var isCalculatingGenetic by remember { mutableStateOf(false) }
 
     val clusterColors = listOf(
         ComposeColor(0xFFE57373), ComposeColor(0xFF81C784), ComposeColor(0xFF64B5F6),
@@ -339,6 +348,118 @@ fun MapScreen(gridMap: GridMap) {
             }
         }
     }
+    fun calculateGeneticRoute() {
+        if (geneticStartPoint == null) {
+            Toast.makeText(context, "Поставьте точку старта на карте!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (selectedDishes.isEmpty()) {
+            Toast.makeText(context, "Выберите хотя бы одно блюдо!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dishToType = mapOf(
+            "Кофе" to listOf("cafe"),
+            "Блины" to listOf("fast_food"),
+            "Полноценный обед" to listOf("restaurant", "canteen"),
+            "Снеки" to listOf("convenience", "supermarket")
+        )
+
+        val targetCafes = selectedDishes.mapNotNull { dish ->
+            val types = dishToType[dish] ?: emptyList()
+            gridMap.foodPoints
+                .filter { it.type in types }
+                .minByOrNull { Math.hypot(it.lat - geneticStartPoint!!.latitude, it.lon - geneticStartPoint!!.longitude) }
+        }.distinct()
+
+        if (targetCafes.isEmpty()) {
+            Toast.makeText(context, "Подходящих заведений не найдено", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scope.launch {
+            isCalculatingGenetic = true
+
+            val resultPath = withContext(Dispatchers.Default) {
+                val allPoints = listOf(geneticStartPoint!!) + targetCafes.map { GeoPoint(it.lat, it.lon) }
+                val numNodes = allPoints.size
+
+                val distMatrix = Array(numNodes) { DoubleArray(numNodes) { 0.0 } }
+                val pathMatrix = Array(numNodes) { Array(numNodes) { emptyList<GridNode>() } }
+
+                for (i in 0 until numNodes) {
+                    for (j in 0 until numNodes) {
+                        if (i == j) continue
+                        val startGrid = geoPointToGridCell(allPoints[i], gridMap.width, gridMap.height)
+                        val endGrid = geoPointToGridCell(allPoints[j], gridMap.width, gridMap.height)
+
+                        val sStart = gridMap.getNearestWalkable(startGrid.x, startGrid.y)
+                        val sEnd = gridMap.getNearestWalkable(endGrid.x, endGrid.y)
+
+                        if (sStart != null && sEnd != null) {
+                            val pathResult = aStar.findPath(
+                                start = sStart, goal = sEnd,
+                                getNeighbors = { gridMap.getNeighbors(it) },
+                                heuristic = { a, b -> gridMap.heuristic(a, b) },
+                                costBetween = { a, b -> gridMap.costBetween(a, b) }
+                            )
+                            if (pathResult != null) {
+                                val smoothed = smoothPath(pathResult.path, gridMap)
+                                pathMatrix[i][j] = smoothed
+
+                                var distMeters = 0.0
+                                for (k in 0 until smoothed.size - 1) {
+                                    val p1 = gridCellToGeoPoint(smoothed[k], gridMap.width, gridMap.height)
+                                    val p2 = gridCellToGeoPoint(smoothed[k+1], gridMap.width, gridMap.height)
+                                    distMeters += p1.distanceToAsDouble(p2)
+                                }
+                                distMatrix[i][j] = distMeters
+                            } else {
+                                distMatrix[i][j] = Double.POSITIVE_INFINITY
+                            }
+                        } else {
+                            distMatrix[i][j] = Double.POSITIVE_INFINITY
+                        }
+                    }
+                }
+
+                val openHours = IntArray(numNodes) { 0 }
+                val closeHours = IntArray(numNodes) { 24 }
+                for (i in 1 until numNodes) {
+                    val name = targetCafes[i-1].name
+                    openHours[i] = 8 + (Math.abs(name.hashCode()) % 4)
+                    closeHours[i] = 18 + (Math.abs(name.hashCode()) % 5)
+                }
+
+                val ga = com.example.myapplication.algorithms.GeneticAlgorithm(
+                    numNodes = numNodes,
+                    distanceMatrix = distMatrix,
+                    openHours = openHours,
+                    closeHours = closeHours,
+                    currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                )
+                val bestIndividual = ga.run()
+
+                val finalGeoPath = mutableListOf<GeoPoint>()
+                var currentIdx = 0
+                for (nextIdx in bestIndividual.route) {
+                    val segment = pathMatrix[currentIdx][nextIdx]
+                    finalGeoPath.addAll(segment.map { gridCellToGeoPoint(it, gridMap.width, gridMap.height) })
+                    currentIdx = nextIdx
+                }
+
+                Pair(finalGeoPath, bestIndividual.route.map { allPoints[it] })
+            }
+
+            withContext(Dispatchers.Main) {
+                geneticRouteDraw = resultPath.first
+                geneticMarkers = resultPath.second
+                isCalculatingGenetic = false
+            }
+        }
+    }
+
+
 
     fun clearMap() {
         startPoint = null
@@ -475,28 +596,24 @@ fun MapScreen(gridMap: GridMap) {
                     val eventsReceiver = object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             p?.let { gp ->
-                                if (currentSection == AppSection.NAVIGATION) {
-                                    if (!isDrawingMode) {
-                                        if (aStarTargetMode == AStarTarget.START) {
-                                            startPoint = gp
-                                        } else {
-                                            endPoint = gp
-                                        }
-
-                                        if (startPoint != null && endPoint != null) {
-                                            routeToDraw = emptyList()
-                                        }
-                                    }
-                                } else if (currentSection == AppSection.CLUSTERING) {
-                                    if (useUserPoints) {
-                                        userPoints = userPoints + gp
-                                    }
+                                if (currentSection == AppSection.NAVIGATION && !isDrawingMode) {
+                                    if (aStarTargetMode == AStarTarget.START) startPoint = gp else endPoint = gp
+                                    if (startPoint != null && endPoint != null) routeToDraw = emptyList()
+                                    return true
+                                } else if (currentSection == AppSection.CLUSTERING && useUserPoints) {
+                                    userPoints = userPoints + gp
+                                    return true
+                                }
+                                else if (currentSection == AppSection.GENETIC) {
+                                    geneticStartPoint = gp
+                                    return true
                                 }
                             }
-                            return true
+                            return false
                         }
                         override fun longPressHelper(p: GeoPoint?): Boolean = false
                     }
+
                     mapView.overlays.add(MapEventsOverlay(eventsReceiver))
 
                     if (currentSection == AppSection.CLUSTERING) {
@@ -513,21 +630,72 @@ fun MapScreen(gridMap: GridMap) {
                             }
                         }
 
-                         clusterMarkers.forEach { marker ->
-                             val m = Marker(mapView).apply {
-                                 position = marker.position
-                                 icon = marker.icon
-                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                 title = marker.title
+                        clusterMarkers.forEach { marker ->
+                            val m = Marker(mapView).apply {
+                                position = marker.position
+                                icon = marker.icon
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = marker.title
 
-                                 if (useUserPoints) {
-                                     infoWindow = null
-                                 }
-                             }
-                             mapView.overlays.add(m)
-                         }
-                     }
-                    
+                                if (useUserPoints) {
+                                    infoWindow = null
+                                }
+                            }
+                            mapView.overlays.add(m)
+                        }
+                    }
+
+                    if (currentSection == AppSection.NEURAL) {
+                        gridMap.foodPoints.forEach { foodPoint ->
+                            val marker = Marker(mapView).apply {
+                                position = GeoPoint(foodPoint.lat, foodPoint.lon)
+                                icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, TSU_LightBlue)
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = foodPoint.name
+                                infoWindow = null
+                                setOnMarkerClickListener { _, _ ->
+                                    selectedEstablishmentForRating = foodPoint
+                                    true
+                                }
+                            }
+                            mapView.overlays.add(marker)
+                        }
+                    }
+                    if (currentSection == AppSection.GENETIC) {
+                        geneticStartPoint?.let {
+                            val marker = Marker(mapView).apply {
+                                position = it
+                                icon = createAStarIcon(context, AppConstants.MARKER_SIZE_PX, true)
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = "Я здесь"
+                                infoWindow = null
+                            }
+                            mapView.overlays.add(marker)
+                        }
+
+                        if (geneticRouteDraw.isNotEmpty()) {
+                            val polyline = Polyline(mapView).apply {
+                                setPoints(geneticRouteDraw)
+                                outlinePaint.color = android.graphics.Color.MAGENTA
+                                outlinePaint.strokeWidth = AppConstants.ROUTE_WIDTH_PX
+                            }
+                            mapView.overlays.add(polyline)
+
+                            geneticMarkers.forEachIndexed { index, gp ->
+                                val marker = Marker(mapView).apply {
+                                    position = gp
+                                    icon = createColoredDotIcon(context, AppConstants.MARKER_SIZE_PX, ComposeColor.Magenta)
+                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                    title = "Шаг ${index + 1}"
+                                    infoWindow = null
+                                }
+                                mapView.overlays.add(marker)
+                            }
+                        }
+                    }
+
+
+
                     mapView.invalidate()
                 }
             )
@@ -829,7 +997,94 @@ fun MapScreen(gridMap: GridMap) {
                     }
                 }
             }
+        } else if (currentSection == AppSection.NEURAL) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                ComposeColor.White.copy(alpha = 0.9f),
+                                ComposeColor.White
+                            )
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Оценка заведения",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TSU_DarkBlue,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Нажмите на синюю точку (заведение) на карте, чтобы нарисовать для него оценку",
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = ComposeColor.Gray
+                )
+            }
+        } else if (currentSection == AppSection.GENETIC) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 100.dp, start = 16.dp, end = 16.dp)
+                    .background(Brush.verticalGradient(listOf(ComposeColor.White.copy(0.9f), ComposeColor.White)), RoundedCornerShape(24.dp))
+                    .padding(20.dp)
+            ) {
+                Text("Поиск обеда", style = MaterialTheme.typography.titleLarge, color = TSU_DarkBlue, fontWeight = FontWeight.ExtraBold)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    if (geneticStartPoint == null) "📍 Кликните на карту, чтобы указать где вы находитесь" else "📍 Точка старта установлена",
+                    color = if (geneticStartPoint == null) ComposeColor.Red else ComposeColor.Gray,
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.heightIn(max = 140.dp)
+                ) {
+                    items(availableDishes.size) { index ->
+                        val dish = availableDishes[index]
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Checkbox(
+                                checked = selectedDishes.contains(dish),
+                                onCheckedChange = { if (it) selectedDishes += dish else selectedDishes -= dish },
+                                colors = CheckboxDefaults.colors(checkedColor = TSU_LightBlue)
+                            )
+                            Text(text = dish, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = { calculateGeneticRoute() },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = TSU_LightBlue)
+                ) {
+                    if (isCalculatingGenetic) {
+                        CircularProgressIndicator(color = ComposeColor.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("ПОСТРОИТЬ МАРШРУТ", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
+    }
+    if (selectedEstablishmentForRating != null) {
+        RatingScreen(
+            establishmentName = selectedEstablishmentForRating!!.name,
+            establishmentPoint = GeoPoint(selectedEstablishmentForRating!!.lat, selectedEstablishmentForRating!!.lon),
+            onBack = { selectedEstablishmentForRating = null }
+        )
     }
 }
 
